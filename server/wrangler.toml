@@ -1,0 +1,21 @@
+name = "pft"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# LLM config (non-secret). Set LLM_API_KEY via: wrangler secret put LLM_API_KEY
+# Provider: Google Gemini via its OpenAI-compatible endpoint.
+# If LLM_API_KEY is missing, classification falls back to the built-in rules,
+# so a fresh deploy still works before the secret is set.
+# (Local dev: .dev.vars overrides these — see .dev.vars.example.)
+[vars]
+LLM_MODE = "live"
+LLM_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+LLM_MODEL = "gemini-flash-latest"
+# API_TOKEN is optional locally; set as a secret in production:
+#   wrangler secret put API_TOKEN
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pft"
+database_id = "93388329-7902-437f-97bc-135ecf8a2cda"

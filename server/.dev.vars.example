@@ -1,0 +1,14 @@
+# Copy to .dev.vars for local `wrangler dev`. These override [vars] in wrangler.toml.
+# .dev.vars is gitignored — real keys live there, never in wrangler.toml.
+
+# Chosen provider: Google Gemini (OpenAI-compatible endpoint).
+LLM_MODE=live
+LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+LLM_MODEL=gemini-flash-latest
+LLM_API_KEY=<your-gemini-key-from-aistudio.google.com>
+
+# Or run fully offline with the rule-based classifier:
+# LLM_MODE=mock
+
+# Optional local auth (production sets this via `wrangler secret put API_TOKEN`):
+# API_TOKEN=some-long-random-string

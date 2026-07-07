@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+.api-token.local
+*.apk
+*.log
+.expo/
+android/
+ios/
+.DS_Store
+coverage/

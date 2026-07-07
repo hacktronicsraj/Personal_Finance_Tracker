@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finance Tracker — UI Direction</title>
+<style>
+  :root{
+    --page:#101014;
+    --ink:#F4F5F9;
+    --mut:#9BA0B2;
+    --ghost:#5D6172;
+    --line:#23242E;
+    --screen:#000000;
+    --surface:#0E0F13;
+    --surface2:#15161C;
+    --hairline:#1E2029;
+    --accent:#7C83FF;
+    --pos:#3ADC97;
+    --neg:#FF7A7A;
+    --food:#ef4444; --groc:#f59e0b; --trans:#3b82f6; --shop:#8b5cf6;
+    --bills:#14b8a6; --ent:#ec4899; --health:#10b981; --xfer:#8A8F9E;
+    --income:#22c55e; --other:#94a3b8;
+    --sans:-apple-system,"SF Pro Text",Roboto,"Segoe UI",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono","Roboto Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    background:var(--page);
+    color:var(--ink);
+    font-family:var(--sans);
+    line-height:1.5;
+    padding:56px 0 80px;
+  }
+  .wrap{max-width:1480px;margin:0 auto;padding:0 40px}
+
+  /* ---------- page header ---------- */
+  .eyebrow{
+    font-family:var(--mono);font-size:11px;letter-spacing:.22em;
+    color:var(--accent);text-transform:uppercase;
+  }
+  h1{
+    font-size:clamp(30px,4vw,44px);font-weight:800;letter-spacing:-0.03em;
+    text-wrap:balance;margin-top:14px;max-width:18ch;line-height:1.08;
+  }
+  .lede{color:var(--mut);max-width:58ch;margin-top:14px;font-size:15px}
+  .tokens{display:flex;gap:10px;flex-wrap:wrap;margin-top:26px}
+  .tok{
+    display:flex;align-items:center;gap:8px;
+    border:1px solid var(--line);border-radius:999px;
+    padding:6px 12px 6px 7px;font-family:var(--mono);font-size:11px;color:var(--mut);
+  }
+  .tok i{width:16px;height:16px;border-radius:50%;display:block;border:1px solid rgba(255,255,255,.12)}
+
+  /* ---------- phone rail ---------- */
+  .rail{
+    display:flex;gap:44px;overflow-x:auto;padding:52px 40px 26px;
+    scroll-snap-type:x proximity;
+  }
+  .stage{scroll-snap-align:center;flex:0 0 auto;width:322px}
+  .caption{margin-top:22px;padding:0 6px}
+  .caption .step{
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;color:var(--ghost);
+    text-transform:uppercase;
+  }
+  .caption .step b{color:var(--accent);font-weight:600}
+  .caption h3{font-size:15px;font-weight:700;letter-spacing:-.01em;margin-top:6px}
+  .caption p{color:var(--mut);font-size:12.5px;margin-top:5px;line-height:1.55}
+
+  /* ---------- phone chassis ---------- */
+  .phone{
+    width:322px;height:664px;background:var(--screen);
+    border-radius:44px;border:1px solid #26272f;
+    box-shadow:0 0 0 8px #08080b,0 0 0 9px #2a2b33,0 34px 80px -24px rgba(0,0,0,.85);
+    overflow:hidden;position:relative;display:flex;flex-direction:column;
+  }
+  .statusbar{
+    height:40px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;
+    padding:0 26px;font-size:12.5px;font-weight:600;color:var(--ink);position:relative;
+  }
+  .statusbar .cam{
+    position:absolute;left:50%;top:12px;transform:translateX(-50%);
+    width:12px;height:12px;border-radius:50%;background:#0c0d11;border:1px solid #1c1d24;
+  }
+  .sicons{display:flex;align-items:center;gap:5px}
+  .sig{display:flex;align-items:flex-end;gap:1.5px}
+  .sig i{width:2.5px;background:var(--ink);border-radius:1px;display:block}
+  .batt{width:20px;height:10px;border:1px solid var(--mut);border-radius:3px;position:relative}
+  .batt::after{content:"";position:absolute;inset:1.5px;right:5px;background:var(--pos);border-radius:1px}
+  .screen{flex:1;display:flex;flex-direction:column;overflow:hidden;padding:6px 16px 0}
+
+  /* ---------- shared in-phone bits ---------- */
+  .card{
+    background:var(--surface);border:1px solid var(--hairline);
+    border-radius:18px;padding:16px;
+  }
+  .kicker{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;color:var(--ghost);text-transform:uppercase}
+  .money{font-variant-numeric:tabular-nums;letter-spacing:-.03em;font-weight:800}
+  .rupee{color:var(--accent);font-weight:700}
+  .chip{
+    display:inline-flex;align-items:center;gap:5px;border-radius:999px;
+    font-size:10.5px;font-weight:600;padding:3px 9px;
+  }
+  .row{display:flex;align-items:center;gap:11px;padding:10px 2px}
+  .row + .row{border-top:1px solid #14151b}
+  .tile{
+    width:38px;height:38px;border-radius:12px;flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;
+    font-size:14px;font-weight:800;letter-spacing:0;
+  }
+  .row .who{flex:1;min-width:0}
+  .row .who b{display:block;font-size:13.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .who span{display:block;font-size:11px;color:var(--ghost);margin-top:1px}
+  .amt{font-variant-numeric:tabular-nums;font-size:13.5px;font-weight:750;letter-spacing:-.02em}
+  .amt.neg{color:var(--ink)}
+  .amt.pos{color:var(--pos)}
+
+  .tabbar{
+    flex:0 0 auto;display:flex;border-top:1px solid var(--hairline);
+    background:rgba(8,8,11,.9);padding:9px 10px 20px;margin:12px -16px 0;
+  }
+  .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--ghost);font-size:9px;font-weight:600;letter-spacing:.04em}
+  .tab svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .tab.on{color:var(--accent)}
+
+  /* ---------- 01 lock screen ---------- */
+  .lock{
+    flex:1;display:flex;flex-direction:column;padding-top:54px;
+    background:
+      radial-gradient(120% 60% at 80% -10%, rgba(124,131,255,.16), transparent 60%),
+      radial-gradient(90% 50% at 10% 110%, rgba(58,220,151,.07), transparent 60%);
+  }
+  .lock .clock{font-size:64px;font-weight:200;letter-spacing:-.02em;text-align:center;font-variant-numeric:tabular-nums}
+  .lock .date{text-align:center;color:var(--mut);font-size:13px;margin-top:2px}
+  .notif{
+    margin-top:34px;background:rgba(22,23,30,.92);border:1px solid #262834;
+    border-radius:22px;padding:14px 14px 12px;backdrop-filter:blur(10px);
+  }
+  .notif .head{display:flex;align-items:center;gap:8px}
+  .appdot{
+    width:18px;height:18px;border-radius:6px;flex:0 0 auto;
+    background:linear-gradient(135deg,var(--accent),#4a4fd4);
+    display:flex;align-items:center;justify-content:center;
+    font-size:10px;font-weight:800;color:#fff;
+  }
+  .notif .head span{font-size:11px;color:var(--ghost)}
+  .notif h4{font-size:14.5px;font-weight:750;margin-top:9px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .notif p{font-size:12px;color:var(--mut);margin-top:2px}
+  .actions{display:flex;gap:7px;margin-top:12px;flex-wrap:wrap}
+  .act{
+    font-size:11px;font-weight:650;padding:7px 12px;border-radius:999px;
+    border:1px solid #2c2e3c;color:var(--mut);background:#101118;
+  }
+  .act.yes{background:rgba(124,131,255,.16);border-color:rgba(124,131,255,.55);color:#c3c7ff}
+  .notif.dim{opacity:.55;transform:scale(.97);margin-top:10px}
+  .lock .hint{margin-top:auto;text-align:center;color:var(--ghost);font-size:11px;padding-bottom:22px}
+
+  /* ---------- 02 classify ---------- */
+  .sheettitle{font-size:12.5px;color:var(--mut);text-align:center;margin-top:8px}
+  .bigamt{text-align:center;font-size:44px;margin-top:10px}
+  .bigwho{text-align:center;color:var(--mut);font-size:14px;margin-top:2px}
+  .guess{display:flex;justify-content:center;margin-top:12px}
+  .pillgrid{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  .pill{
+    font-size:11.5px;font-weight:650;padding:8px 13px;border-radius:999px;
+    border:1.5px solid #262834;color:var(--mut);display:inline-flex;gap:6px;align-items:center;
+  }
+  .pill i{width:8px;height:8px;border-radius:50%;display:block}
+  .pill.sel{color:#0a0a0d;border-color:transparent}
+  .teach{
+    margin-top:auto;margin-bottom:14px;text-align:center;color:var(--ghost);font-size:11px;
+  }
+  .cta{
+    background:var(--accent);color:#0b0b12;font-weight:750;font-size:14px;
+    border-radius:14px;padding:14px;text-align:center;margin-bottom:8px;
+  }
+
+  /* ---------- 03 dashboard ---------- */
+  .apphead{display:flex;align-items:baseline;justify-content:space-between;padding:10px 2px 12px}
+  .apphead h2{font-size:19px;font-weight:800;letter-spacing:-.02em}
+  .apphead span{font-family:var(--mono);font-size:10px;color:var(--ghost);letter-spacing:.14em}
+  .hero-num{font-size:40px;margin-top:6px}
+  .delta{background:rgba(58,220,151,.12);color:var(--pos)}
+  .stackbar{display:flex;height:10px;border-radius:5px;overflow:hidden;margin-top:14px;background:var(--surface2)}
+  .legend{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+  .leg{display:flex;align-items:center;gap:8px;font-size:12px}
+  .leg i{width:9px;height:9px;border-radius:3px;flex:0 0 auto}
+  .leg b{font-weight:650;color:var(--ink)}
+  .leg .fill{flex:1}
+  .leg span{color:var(--ghost);font-variant-numeric:tabular-nums;font-size:11.5px}
+  .sectionlabel{display:flex;align-items:center;justify-content:space-between;margin:14px 2px 6px}
+  .sectionlabel h5{font-size:12.5px;font-weight:700;color:var(--mut)}
+  .sectionlabel a{font-size:11px;color:var(--accent);text-decoration:none;font-weight:600}
+  .review{border-color:rgba(245,158,11,.35)}
+  .review .chip{background:rgba(245,158,11,.14);color:#fbbf24}
+
+  /* ---------- 04 transactions ---------- */
+  .search{
+    display:flex;align-items:center;gap:8px;background:var(--surface);
+    border:1px solid var(--hairline);border-radius:13px;padding:11px 13px;
+    color:var(--ghost);font-size:13px;
+  }
+  .filters{display:flex;gap:7px;margin-top:10px;overflow:hidden}
+  .f{
+    font-size:11px;font-weight:650;padding:6px 12px;border-radius:999px;flex:0 0 auto;
+    border:1px solid #23242e;color:var(--mut);white-space:nowrap;
+  }
+  .f.on{background:var(--ink);color:#0a0a0d;border-color:var(--ink)}
+  .dategrp{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;color:var(--ghost);text-transform:uppercase;margin:14px 2px 2px}
+
+  /* ---------- 05 analytics ---------- */
+  .mnav{display:flex;align-items:center;justify-content:space-between;padding:8px 2px}
+  .mnav b{font-size:15px;font-weight:750}
+  .mnav .nb{
+    width:30px;height:30px;border-radius:10px;border:1px solid var(--hairline);
+    display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:15px;background:var(--surface);
+  }
+  .donutwrap{display:flex;align-items:center;gap:16px;margin-top:6px}
+  .donut{
+    width:128px;height:128px;border-radius:50%;flex:0 0 auto;position:relative;
+    background:conic-gradient(var(--xfer) 0 37%,var(--food) 37% 62%,var(--groc) 62% 78%,var(--bills) 78% 88%,var(--trans) 88% 95%,var(--shop) 95% 100%);
+  }
+  .donut::after{
+    content:"";position:absolute;inset:17px;border-radius:50%;background:var(--surface);
+    border:1px solid var(--hairline);
+  }
+  .donut .c{
+    position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1;
+  }
+  .donut .c b{font-size:16.5px;font-variant-numeric:tabular-nums;letter-spacing:-.02em;font-weight:800}
+  .donut .c span{font-size:9px;color:var(--ghost);letter-spacing:.1em;text-transform:uppercase;font-family:var(--mono);margin-top:2px}
+  .dlegend{display:flex;flex-direction:column;gap:7px;font-size:11.5px;min-width:0}
+  .dlegend div{display:flex;align-items:center;gap:7px;color:var(--mut)}
+  .dlegend i{width:8px;height:8px;border-radius:2.5px;flex:0 0 auto}
+  .dlegend b{color:var(--ink);font-weight:650;font-variant-numeric:tabular-nums;margin-left:auto}
+  .mrow{display:flex;flex-direction:column;gap:4px;padding:9px 0}
+  .mrow + .mrow{border-top:1px solid #14151b}
+  .mrow .t{display:flex;justify-content:space-between;font-size:12.5px}
+  .mrow .t b{font-weight:650}
+  .mrow .t span{color:var(--mut);font-variant-numeric:tabular-nums}
+  .mbar{height:5px;border-radius:3px;background:var(--surface2);overflow:hidden}
+  .mbar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--accent),#4a4fd4)}
+
+  /* ---------- design notes ---------- */
+  .notes{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+    gap:14px;margin-top:64px;
+  }
+  .note{border:1px solid var(--line);border-radius:16px;padding:22px 24px;background:#121218}
+  .note h6{font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--accent)}
+  .note p{color:var(--mut);font-size:13px;margin-top:10px;line-height:1.65}
+  .note b{color:var(--ink);font-weight:650}
+
+  @media (prefers-reduced-motion:no-preference){
+    .stage{animation:rise .6s ease both}
+    .stage:nth-child(2){animation-delay:.07s}.stage:nth-child(3){animation-delay:.14s}
+    .stage:nth-child(4){animation-delay:.21s}.stage:nth-child(5){animation-delay:.28s}
+    @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="eyebrow">Personal Finance Tracker · Android · Dark UI Direction</div>
+  <h1>Quiet black. Loud numbers.</h1>
+  <p class="lede">
+    AMOLED-black ground, one indigo accent, and category color used only where it means something.
+    Every screen below is real app data — the IDBI messages, the ₹9,000 Groww debit, the Swiggy order —
+    laid out in the journey order a payment actually travels.
+  </p>
+  <div class="tokens">
+    <span class="tok"><i style="background:#000"></i>#000000 screen</span>
+    <span class="tok"><i style="background:#0E0F13"></i>#0E0F13 surface</span>
+    <span class="tok"><i style="background:#7C83FF"></i>#7C83FF accent</span>
+    <span class="tok"><i style="background:#3ADC97"></i>#3ADC97 credit</span>
+    <span class="tok"><i style="background:#F4F5F9"></i>#F4F5F9 ink</span>
+  </div>
+</div>
+
+<div class="rail">
+
+  <!-- ================= 01 NOTIFICATION ================= -->
+  <div class="stage">
+    <div class="phone">
+      <div class="lock">
+        <div style="padding:0 18px">
+          <div class="clock">21:47</div>
+          <div class="date">Thursday, 2 July</div>
+          <div class="notif">
+            <div class="head">
+              <div class="appdot">₹</div>
+              <span>Finance Tracker · now</span>
+            </div>
+            <h4>₹350 spent · SWIGGY</h4>
+            <p>Best guess: Food &amp; Dining. Confirm?</p>
+            <div class="actions">
+              <span class="act yes">✓ Food &amp; Dining</span>
+              <span class="act">Groceries</span>
+              <span class="act">Other…</span>
+            </div>
+          </div>
+          <div class="notif dim">
+            <div class="head">
+              <div class="appdot">₹</div>
+              <span>Finance Tracker · 21:12</span>
+            </div>
+            <h4>₹9,000 sent · Groww</h4>
+            <p>Filed under Transfers · Investments</p>
+          </div>
+        </div>
+        <div class="hint">Swipe up to unlock</div>
+      </div>
+    </div>
+    <div class="caption">
+      <div class="step"><b>01</b> · The moment after payment</div>
+      <h3>Classify from the lock screen</h3>
+      <p>The bank SMS lands, the LLM guesses, and one tap on the notification confirms it. No app open needed — "Other…" deep-links to the full picker.</p>
+    </div>
+  </div>
+
+  <!-- ================= 02 CLASSIFY ================= -->
+  <div class="stage">
+    <div class="phone">
+      <div class="statusbar">
+        <span>21:48</span><span class="cam"></span>
+        <span class="sicons">
+          <span class="sig"><i style="height:4px"></i><i style="height:6px"></i><i style="height:8px"></i><i style="height:10px"></i></span>
+          <span class="batt"></span>
+        </span>
+      </div>
+      <div class="screen">
+        <div style="width:36px;height:4px;border-radius:2px;background:#23242e;margin:2px auto 0"></div>
+        <div class="sheettitle">How would you classify this?</div>
+        <div class="bigamt money"><span class="rupee">₹</span>90</div>
+        <div class="bigwho">N ANDAALU · IDBI ··417</div>
+        <div class="guess">
+          <span class="chip" style="background:rgba(148,163,184,.12);color:#aab1c2">LLM guess: Other · 30% sure</span>
+        </div>
+        <div class="pillgrid">
+          <span class="pill sel" style="background:var(--food)">Food &amp; Dining</span>
+          <span class="pill"><i style="background:var(--groc)"></i>Groceries</span>
+          <span class="pill"><i style="background:var(--trans)"></i>Transport</span>
+          <span class="pill"><i style="background:var(--shop)"></i>Shopping</span>
+          <span class="pill"><i style="background:var(--bills)"></i>Bills &amp; Utilities</span>
+          <span class="pill"><i style="background:var(--ent)"></i>Entertainment</span>
+          <span class="pill"><i style="background:var(--health)"></i>Health</span>
+          <span class="pill"><i style="background:var(--xfer)"></i>Transfers</span>
+          <span class="pill"><i style="background:var(--income)"></i>Income</span>
+          <span class="pill"><i style="background:var(--other)"></i>Other</span>
+        </div>
+        <div class="teach">Your answer becomes a training example —<br>next street-vendor UPI gets guessed right.</div>
+        <div class="cta">Save · Food &amp; Dining</div>
+      </div>
+    </div>
+    <div class="caption">
+      <div class="step"><b>02</b> · When the guess is weak</div>
+      <h3>Full classify sheet</h3>
+      <p>Low-confidence guesses (street vendors, person-to-person UPI) open the picker. Corrections feed the LLM as few-shot examples.</p>
+    </div>
+  </div>
+
+  <!-- ================= 03 DASHBOARD ================= -->
+  <div class="stage">
+    <div class="phone">
+      <div class="statusbar">
+        <span>21:49</span><span class="cam"></span>
+        <span class="sicons">
+          <span class="sig"><i style="height:4px"></i><i style="height:6px"></i><i style="height:8px"></i><i style="height:10px"></i></span>
+          <span class="batt"></span>
+        </span>
+      </div>
+      <div class="screen">
+        <div class="apphead"><h2>July</h2><span>SYNCED · 21:47</span></div>
+        <div class="card">
+          <div class="kicker">Spent this month</div>
+          <div class="hero-num money"><span class="rupee">₹</span>24,580</div>
+          <div style="margin-top:8px"><span class="chip delta">▼ 12% vs June</span></div>
+          <div class="stackbar">
+            <i style="flex:37;background:var(--xfer)"></i><i style="flex:25;background:var(--food)"></i>
+            <i style="flex:16;background:var(--groc)"></i><i style="flex:10;background:var(--bills)"></i>
+            <i style="flex:7;background:var(--trans)"></i><i style="flex:5;background:var(--shop)"></i>
+          </div>
+          <div class="legend">
+            <div class="leg"><i style="background:var(--xfer)"></i><b>Transfers</b><span class="fill"></span><span>₹9,000 · 37%</span></div>
+            <div class="leg"><i style="background:var(--food)"></i><b>Food &amp; Dining</b><span class="fill"></span><span>₹6,240 · 25%</span></div>
+            <div class="leg"><i style="background:var(--groc)"></i><b>Groceries</b><span class="fill"></span><span>₹3,890 · 16%</span></div>
+            <div class="leg"><i style="background:var(--bills)"></i><b>Bills &amp; Utilities</b><span class="fill"></span><span>₹2,450 · 10%</span></div>
+          </div>
+        </div>
+        <div class="sectionlabel"><h5>Needs review · 1</h5><a href="#">See all</a></div>
+        <div class="card review" style="padding:6px 14px">
+          <div class="row">
+            <div class="tile" style="background:rgba(148,163,184,.14);color:#aab1c2">N</div>
+            <div class="who"><b>N ANDAALU</b><span>UPI · 23 Jun</span></div>
+            <span class="chip">guess: Other</span>
+          </div>
+        </div>
+        <div class="sectionlabel"><h5>Recent</h5><a href="#">All →</a></div>
+        <div class="card" style="padding:4px 14px">
+          <div class="row">
+            <div class="tile" style="background:rgba(138,143,158,.15);color:#c8ccd8">G</div>
+            <div class="who"><b>Groww</b><span>Transfers · today 21:12</span></div>
+            <div class="amt neg">−₹9,000</div>
+          </div>
+          <div class="row">
+            <div class="tile" style="background:rgba(239,68,68,.14);color:#fca5a5">S</div>
+            <div class="who"><b>SWIGGY</b><span>Food &amp; Dining · today 21:47</span></div>
+            <div class="amt neg">−₹350</div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tab on">
+            <svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg>
+            Home
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h9"/></svg>
+            Activity
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24"><path d="M5 19V11M12 19V5M19 19v-8"/></svg>
+            Insights
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 4v2.4M12 17.6V20M4 12h2.4M17.6 12H20M6.3 6.3l1.7 1.7M16 16l1.7 1.7M17.7 6.3L16 8M8 16l-1.7 1.7"/></svg>
+            Settings
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="caption">
+      <div class="step"><b>03</b> · The daily glance</div>
+      <h3>Dashboard</h3>
+      <p>One number rules the screen. The stacked bar is the month's shape; anything the LLM wasn't sure about queues under "Needs review".</p>
+    </div>
+  </div>
+
+  <!-- ================= 04 TRANSACTIONS ================= -->
+  <div class="stage">
+    <div class="phone">
+      <div class="statusbar">
+        <span>21:50</span><span class="cam"></span>
+        <span class="sicons">
+          <span class="sig"><i style="height:4px"></i><i style="height:6px"></i><i style="height:8px"></i><i style="height:10px"></i></span>
+          <span class="batt"></span>
+        </span>
+      </div>
+      <div class="screen">
+        <div class="apphead"><h2>Activity</h2><span>212 TXNS</span></div>
+        <div class="search">⌕&nbsp; Search merchant or SMS…</div>
+        <div class="filters">
+          <span class="f on">All</span><span class="f">Food</span><span class="f">Groceries</span>
+          <span class="f">Transport</span><span class="f">Bills</span><span class="f">Shop</span>
+        </div>
+        <div class="dategrp">Today · 2 Jul</div>
+        <div class="card" style="padding:4px 14px">
+          <div class="row">
+            <div class="tile" style="background:rgba(239,68,68,.14);color:#fca5a5">S</div>
+            <div class="who"><b>SWIGGY</b><span>Food &amp; Dining · 21:47</span></div>
+            <div class="amt neg">−₹350</div>
+          </div>
+          <div class="row">
+            <div class="tile" style="background:rgba(138,143,158,.15);color:#c8ccd8">G</div>
+            <div class="who"><b>Groww</b><span>Transfers · 21:12</span></div>
+            <div class="amt neg">−₹9,000</div>
+          </div>
+        </div>
+        <div class="dategrp">1 Jul</div>
+        <div class="card" style="padding:4px 14px">
+          <div class="row">
+            <div class="tile" style="background:rgba(34,197,94,.14);color:#86efac">A</div>
+            <div class="who"><b>ACME Payroll</b><span>Income · salary</span></div>
+            <div class="amt pos">+₹52,000</div>
+          </div>
+          <div class="row">
+            <div class="tile" style="background:rgba(20,184,166,.14);color:#5eead4">A</div>
+            <div class="who"><b>Airtel</b><span>Bills &amp; Utilities · recharge</span></div>
+            <div class="amt neg">−₹999</div>
+          </div>
+        </div>
+        <div class="dategrp">23 Jun</div>
+        <div class="card" style="padding:4px 14px">
+          <div class="row">
+            <div class="tile" style="background:rgba(148,163,184,.14);color:#aab1c2">N</div>
+            <div class="who"><b>N ANDAALU</b><span>Other · needs review</span></div>
+            <div class="amt neg">−₹90</div>
+          </div>
+          <div class="row">
+            <div class="tile" style="background:rgba(59,130,246,.14);color:#93c5fd">S</div>
+            <div class="who"><b>SATYAWAN JADAV</b><span>Transport · auto</span></div>
+            <div class="amt neg">−₹90</div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tab">
+            <svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg>
+            Home
+          </div>
+          <div class="tab on">
+            <svg viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h9"/></svg>
+            Activity
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24"><path d="M5 19V11M12 19V5M19 19v-8"/></svg>
+            Insights
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 4v2.4M12 17.6V20M4 12h2.4M17.6 12H20M6.3 6.3l1.7 1.7M16 16l1.7 1.7M17.7 6.3L16 8M8 16l-1.7 1.7"/></svg>
+            Settings
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="caption">
+      <div class="step"><b>04</b> · The ledger</div>
+      <h3>Activity feed</h3>
+      <p>Merchant-initial tiles tinted by category, amounts in tabular numerals, credits in green. Search hits raw SMS text too.</p>
+    </div>
+  </div>
+
+  <!-- ================= 05 ANALYTICS ================= -->
+  <div class="stage">
+    <div class="phone">
+      <div class="statusbar">
+        <span>21:51</span><span class="cam"></span>
+        <span class="sicons">
+          <span class="sig"><i style="height:4px"></i><i style="height:6px"></i><i style="height:8px"></i><i style="height:10px"></i></span>
+          <span class="batt"></span>
+        </span>
+      </div>
+      <div class="screen">
+        <div class="apphead"><h2>Insights</h2><span>LLM-CLASSIFIED</span></div>
+        <div class="mnav">
+          <span class="nb">‹</span><b>July 2026</b><span class="nb" style="opacity:.35">›</span>
+        </div>
+        <div class="card">
+          <div class="donutwrap">
+            <div class="donut"><div class="c"><b>₹24,580</b><span>spent</span></div></div>
+            <div class="dlegend">
+              <div><i style="background:var(--xfer)"></i>Transfers<b>37%</b></div>
+              <div><i style="background:var(--food)"></i>Food<b>25%</b></div>
+              <div><i style="background:var(--groc)"></i>Groceries<b>16%</b></div>
+              <div><i style="background:var(--bills)"></i>Bills<b>10%</b></div>
+              <div><i style="background:var(--trans)"></i>Transport<b>7%</b></div>
+              <div><i style="background:var(--shop)"></i>Shopping<b>5%</b></div>
+            </div>
+          </div>
+        </div>
+        <div class="sectionlabel"><h5>Top merchants</h5></div>
+        <div class="card" style="padding:8px 16px">
+          <div class="mrow">
+            <div class="t"><b>Groww</b><span>₹9,000 · 1×</span></div>
+            <div class="mbar"><i style="width:100%"></i></div>
+          </div>
+          <div class="mrow">
+            <div class="t"><b>SWIGGY</b><span>₹2,840 · 9×</span></div>
+            <div class="mbar"><i style="width:32%"></i></div>
+          </div>
+          <div class="mrow">
+            <div class="t"><b>Blinkit</b><span>₹2,120 · 7×</span></div>
+            <div class="mbar"><i style="width:24%"></i></div>
+          </div>
+          <div class="mrow">
+            <div class="t"><b>Airtel</b><span>₹999 · 1×</span></div>
+            <div class="mbar"><i style="width:11%"></i></div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tab">
+            <svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg>
+            Home
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h9"/></svg>
+            Activity
+          </div>
+          <div class="tab on">
+            <svg viewBox="0 0 24 24"><path d="M5 19V11M12 19V5M19 19v-8"/></svg>
+            Insights
+          </div>
+          <div class="tab">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 4v2.4M12 17.6V20M4 12h2.4M17.6 12H20M6.3 6.3l1.7 1.7M16 16l1.7 1.7M17.7 6.3L16 8M8 16l-1.7 1.7"/></svg>
+            Settings
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="caption">
+      <div class="step"><b>05</b> · The month in shape</div>
+      <h3>Insights</h3>
+      <p>Donut for proportion, ranked merchant bars for habit-spotting. Swipe months to compare.</p>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="notes">
+    <div class="note">
+      <h6>Color system</h6>
+      <p><b>True #000 screens</b> (AMOLED-friendly, battery-cheap), surfaces one step up at #0E0F13 with hairline borders instead of shadows. A single indigo accent <b>#7C83FF</b> marks everything interactive; the ten category hues appear only as data — tiles, bars, donut slices — never as decoration.</p>
+    </div>
+    <div class="note">
+      <h6>Type &amp; numbers</h6>
+      <p>System grotesk (Roboto on device) so it feels native. Money is the display type: <b>heavy weight, tight tracking, tabular numerals</b> so amounts align in every list, with the ₹ sign picked out in accent. Mono microcaps for metadata like SYNCED · 21:47.</p>
+    </div>
+    <div class="note">
+      <h6>Signature moment</h6>
+      <p>The lock-screen notification is the product: <b>pay → guess → one-tap confirm</b>. Low-confidence guesses get an amber "needs review" trail through Dashboard and Activity, so nothing stays misfiled longer than a glance.</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>
