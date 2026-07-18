@@ -12,15 +12,22 @@ import { presentClassifyNotification } from '../notify/notifications';
 import { dedupeKey, isFinancialSms, parseTransaction } from '../parse/parser';
 import type { ParsedTxn } from '../parse/types';
 import { getSettings } from '../settings';
+import { refreshWidget } from '../widget';
 
 /** Submit a parsed transaction to the backend; cache it; optionally notify. */
 async function submit(
   parsed: ParsedTxn,
-  opts: { source: string; rawText: string; category?: string; notify: boolean },
+  opts: { source: string; rawText: string; category?: string; note?: string; tags?: string[]; notify: boolean },
 ): Promise<{ transaction: TxnRow | null; queued: boolean }> {
   const { deviceId } = await getSettings();
-  const key = dedupeKey(deviceId, parsed);
-  const payload = { deviceId, rawText: opts.rawText, dedupeKey: key, parsed, source: opts.source, category: opts.category };
+  // SMS events are re-delivered (re-scan, receiver double-fire), so they need a
+  // STABLE key. Manual/shared saves are single-shot — without refNo/occurredAt the
+  // key has no entropy, so any later save of the same amount would collide with an
+  // old row forever and be silently swallowed. Salt non-SMS keys; the salted key is
+  // stored in the outbox payload, so offline retries stay idempotent.
+  const baseKey = dedupeKey(deviceId, parsed);
+  const key = opts.source === 'sms' ? baseKey : `${baseKey}|${Date.now().toString(36)}`;
+  const payload = { deviceId, rawText: opts.rawText, dedupeKey: key, parsed, source: opts.source, category: opts.category, note: opts.note, tags: opts.tags };
   try {
     const { transaction, deduped } = await classify(payload);
     await upsertTxn(transaction);
@@ -49,6 +56,9 @@ export async function ingestSms(rawText: string, sender?: string): Promise<void>
   }
   if (parsed.direction !== 'debit') return; // spending only
   await submit(parsed, { source: 'sms', rawText, notify: true });
+  // Every debit SMS already wakes JS in the background — refresh the widget here
+  // so it stays fresh without any scheduled work.
+  await refreshWidget().catch(() => {});
 }
 
 /**
@@ -57,12 +67,14 @@ export async function ingestSms(rawText: string, sender?: string): Promise<void>
  */
 export async function saveConfirmed(
   parsed: ParsedTxn,
-  opts: { source: string; rawText?: string; category?: string },
+  opts: { source: string; rawText?: string; category?: string; note?: string; tags?: string[] },
 ): Promise<{ transaction: TxnRow | null; queued: boolean }> {
   return submit({ ...parsed, direction: 'debit' }, {
     source: opts.source,
     rawText: opts.rawText ?? '',
     category: opts.category,
+    note: opts.note,
+    tags: opts.tags,
     notify: false,
   });
 }
@@ -106,4 +118,5 @@ export async function pullSync(): Promise<number> {
 export async function syncBackend(): Promise<void> {
   await flushOutbox();
   await pullSync();
+  await refreshWidget().catch(() => {}); // keep the home-screen widget current
 }

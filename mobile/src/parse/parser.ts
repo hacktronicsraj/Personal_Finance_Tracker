@@ -32,6 +32,14 @@ export function isBankSender(sender?: string): boolean {
 export function isFinancialSms(text: string, sender?: string): boolean {
   if (!text) return false;
   if (OTP_RE.test(text) && !/\b(debited|credited|spent|paid)\b/i.test(text)) return false;
+
+  // Exclude mandate/autopay setup, payment reminders, failed/reversed txns,
+  // promotional offers, and EMI due reminders — unless the message also contains
+  // an actual transaction verb proving money already moved.
+  const EXCLUDE_RE = /\b(mandate|auto[\s-]?pay|autopay|si registered|standing instruction|reminder|due date|due on|payment due|pay by|last date|failed|declined|unsuccessful|reversed|could not|cashback offer|get ₹|earn ₹|win ₹|flat ₹|emi due|emi of|instalment|set up|register|activate|e-?nach|nach debit|renewal|upcoming|will be debited|will be charged|scheduled|is due)\b/i;
+  const ACTUAL_TXN_RE = /\b(debited|credited|spent|paid|withdrawn)\b/i;
+  if (EXCLUDE_RE.test(text) && !ACTUAL_TXN_RE.test(text)) return false;
+
   if (!MONEY_RE.test(text)) return false;
   return TXN_HINT_RE.test(text) || isBankSender(sender);
 }
@@ -42,26 +50,47 @@ function toNumber(s: string | undefined): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-function parseDate(raw: string | undefined): string | undefined {
-  if (!raw) return undefined;
-  // dd-MMM-yy | dd-MMM-yyyy | dd/MM/yy | dd-MM-yyyy
-  let m = raw.match(/(\d{1,2})[-\s]([A-Za-z]{3})[-\s](\d{2,4})/);
-  if (m) {
-    const day = Number(m[1]);
-    const mon = MONTHS[m[2].toLowerCase()];
-    let year = Number(m[3]);
-    if (year < 100) year += 2000;
-    if (mon !== undefined) return new Date(Date.UTC(year, mon, day)).toISOString();
+function parseDate(text: string | undefined): string | undefined {
+  if (!text) return undefined;
+  let day: number | undefined;
+  let mon: number | undefined;
+  let year: number | undefined;
+
+  // "07 Jul", "02-Jul-26", "02 July 2026". Year is OPTIONAL — and a trailing clock
+  // time like "07:44" must NOT be mistaken for the year (that's the "2007" bug),
+  // so the year token is rejected when immediately followed by ':' or more digits.
+  let m = text.match(/\b(\d{1,2})[-\s]([A-Za-z]{3,9})(?:[-\s](\d{4}|\d{2})(?!\s*:|\d))?/);
+  if (m && MONTHS[m[2].slice(0, 3).toLowerCase()] !== undefined) {
+    day = Number(m[1]);
+    mon = MONTHS[m[2].slice(0, 3).toLowerCase()];
+    if (m[3]) year = Number(m[3]);
+  } else {
+    // "dd/MM/yy" | "dd-MM-yyyy"
+    m = text.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/);
+    if (m) {
+      day = Number(m[1]);
+      mon = Number(m[2]) - 1;
+      year = Number(m[3]);
+    }
   }
-  m = raw.match(/(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
-  if (m) {
-    const day = Number(m[1]);
-    const mon = Number(m[2]) - 1;
-    let year = Number(m[3]);
-    if (year < 100) year += 2000;
-    return new Date(Date.UTC(year, mon, day)).toISOString();
+  if (day === undefined || mon === undefined || mon < 0 || mon > 11 || day < 1 || day > 31) {
+    return undefined;
   }
-  return undefined;
+
+  const now = new Date();
+  if (year === undefined) year = now.getFullYear(); // no year in the SMS → assume this year (local time)
+  else if (year < 100) year += 2000;
+
+  // The SMS carries an IST calendar date with no time. Anchor it to midnight UTC
+  // (deterministic, independent of the runtime's timezone): 00:00Z renders as
+  // 05:30 the same day in IST, so the displayed calendar date never drifts.
+  const d = new Date(Date.UTC(year, mon, day));
+  // Plausibility guard: a bank alert is never years old or in the future. Reject
+  // absurd parses (>2 days ahead / >2 years back) so a mis-read date becomes
+  // "unknown" and the txn falls back to its capture time downstream.
+  const diff = d.getTime() - now.getTime();
+  if (diff > 2 * 86400000 || diff < -730 * 86400000) return undefined;
+  return d.toISOString();
 }
 
 function cleanMerchant(s: string | undefined): string | undefined {
@@ -85,10 +114,12 @@ function cleanMerchant(s: string | undefined): string | undefined {
 export function parseTransaction(rawText: string): ParsedTxn | null {
   if (!rawText) return null;
 
-  // 1) Strip UPI-block / helpline boilerplate and trailing bank signature.
+  // 1) Strip UPI-block / dispute / helpline boilerplate and trailing bank signature
+  //    so none of it gets mistaken for the payee (e.g. "To dispute call ... SFBL").
   let text = rawText
     .replace(/To Block UPI[\s\S]*$/i, ' ')
-    .replace(/-\s*[A-Za-z ]+Bank\s*$/i, ' ')
+    .replace(/To dispute[\s\S]*$/i, ' ')
+    .replace(/-\s*[A-Za-z ]+(?:Bank|SFBL?|Ltd)\.?\s*$/i, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -116,7 +147,7 @@ export function parseTransaction(rawText: string): ParsedTxn | null {
     text.match(/UPI[:\s]*([0-9]{6,})/i)?.[1] ??
     text.match(/(?:Ref|RRN|txn)\s*(?:no\.?|id)?[:\s]*([A-Za-z0-9]{6,})/i)?.[1];
   const balance = toNumber(text.match(/Bal(?:ance)?\.?\s*(?:Rs|INR|₹)?\.?\s?([\d,]+(?:\.\d{1,2})?)/i)?.[1]);
-  const occurredAt = parseDate(text.match(/on\s+(\d{1,2}[-/\s][A-Za-z0-9]{2,3}[-/\s]\d{2,4})/i)?.[1]);
+  const occurredAt = parseDate(text);
 
   // 5) Merchant / counterparty.
   let merchant: string | undefined;
@@ -126,7 +157,10 @@ export function parseTransaction(rawText: string): ParsedTxn | null {
     merchant =
       cleanMerchant(text.match(/Bal(?:ance)?\.?\s*(?:Rs|INR|₹)?[\d,. ]+\s+([A-Za-z0-9 .&@'\-]+?)\s+credited/i)?.[1]) ??
       cleanMerchant(text.match(/\b(?:to|at|towards)\s+([A-Za-z0-9 .&@'\-]+?)(?:\s+on|\.|;|$)/i)?.[1]) ??
-      cleanMerchant(vpa);
+      cleanMerchant(vpa) ??
+      // SuperCard (Utkarsh SFBL) alerts carry no payee — just "for UPI - <ref>".
+      // Label them so they read as a real spend instead of "Unknown".
+      (/\bsuper\s?card\b/i.test(rawText) ? 'SuperCard Payment' : undefined);
   } else {
     merchant =
       cleanMerchant(text.match(/\b(?:from|by)\s+([A-Za-z0-9 .&@'\-]+?)(?:\s+on|\.|;|$)/i)?.[1]) ??
@@ -174,7 +208,7 @@ export function parsePayment(rawText: string): ParsedTxn | null {
     cleanMerchant(text.match(/\b(?:from|by)\s+([A-Za-z0-9 .&@'\-]+?)(?:\s+(?:on|for|via|success\w*)\b|[.,;!]|$)/i)?.[1]) ??
     cleanMerchant(text.match(/([A-Za-z0-9.\-_]{2,}@[A-Za-z]{2,})/)?.[1]);
 
-  const occurredAt = parseDate(text.match(/on\s+(\d{1,2}[-/\s][A-Za-z0-9]{2,3}[-/\s]\d{2,4})/i)?.[1]);
+  const occurredAt = parseDate(text);
 
   return { amount, direction, currency: 'INR', merchant, occurredAt };
 }

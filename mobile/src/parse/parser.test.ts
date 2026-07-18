@@ -107,3 +107,46 @@ describe('parseTransaction — other common formats', () => {
     expect(parseTransaction('Hello, are we meeting tomorrow?')).toBeNull();
   });
 });
+
+describe('parseTransaction — date edge cases (the "2007" bug)', () => {
+  it('does not read the clock time as the year when the SMS has no year', () => {
+    const sms =
+      'Dear Tolupunoori, your SuperCard 4003 debited for INR 20.00 on 07 Jul 07:44 PM for UPI - 655438523066. To dispute call 18003097986 - Utkarsh SFBL';
+    const p = parseTransaction(sms)!;
+    expect(p.amount).toBe(20);
+    expect(p.direction).toBe('debit');
+    const d = new Date(p.occurredAt!);
+    expect(d.getUTCFullYear()).toBe(new Date().getUTCFullYear()); // this year, NOT 2007
+    expect(d.getUTCMonth()).toBe(6); // July
+    expect(d.getUTCDate()).toBe(7);
+  });
+  it('drops an implausibly old parsed date (becomes unknown, not a wrong month)', () => {
+    const p = parseTransaction('A/c XX1 debited for Rs 5.00 on 02-Jul-05; Bal Rs 10.00')!;
+    expect(p.amount).toBe(5);
+    expect(p.occurredAt).toBeUndefined();
+  });
+  it('still parses a normal dd-MMM-yy date', () => {
+    const p = parseTransaction('A/c XX1 debited for Rs 5.00 on 02-Jul-26; Bal Rs 10.00')!;
+    expect(p.occurredAt).toBe('2026-07-02T00:00:00.000Z');
+  });
+});
+
+describe('parseTransaction — SuperCard / Utkarsh SFBL format', () => {
+  const sms =
+    'Dear Tolupunoori, your SuperCard 4003 debited for INR 342.00 on 08 Jul 12:03 AM for UPI - 655542417817. To dispute call 18003097986 - Utkarsh SFBL';
+  const p = parseTransaction(sms)!;
+  it('amount + direction parse', () => {
+    expect(p.amount).toBe(342);
+    expect(p.direction).toBe('debit');
+  });
+  it('labels the payee-less card debit as "SuperCard Payment", not the dispute boilerplate', () => {
+    expect(p.merchant).toBe('SuperCard Payment');
+    expect(p.merchant ?? '').not.toMatch(/dispute|SFBL|18003097986/i);
+  });
+  it('reads "08 Jul 12:03 AM" as this year (not 2003 from the time)', () => {
+    const d = new Date(p.occurredAt!);
+    expect(d.getUTCFullYear()).toBe(new Date().getUTCFullYear());
+    expect(d.getUTCMonth()).toBe(6);
+    expect(d.getUTCDate()).toBe(8);
+  });
+});
