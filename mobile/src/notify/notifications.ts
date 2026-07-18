@@ -4,6 +4,7 @@ import { CATEGORIES, formatINR } from '../config';
 import type { TxnRow } from '../api/client';
 
 export const CLASSIFY_CATEGORY = 'CLASSIFY_TXN';
+export const REPORTS_CHANNEL = 'reports';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -25,6 +26,38 @@ export async function configureNotifications(): Promise<boolean> {
   }
   const { status } = await Notifications.requestPermissionsAsync();
   return status === 'granted';
+}
+
+/**
+ * Schedule the repeating weekly local notification (Sun 20:15 IST) that points at
+ * the latest report. Chosen over background polling: zero background work, zero
+ * battery — the server cron generates the report regardless. Idempotent: it won't
+ * stack duplicates across launches.
+ */
+export async function scheduleWeeklyReportNotification(): Promise<void> {
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync(REPORTS_CHANNEL, {
+      name: 'Weekly report',
+      importance: Notifications.AndroidImportance.DEFAULT,
+    });
+  }
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  if (scheduled.some((n) => (n.content.data as { type?: string })?.type === 'weekly-report')) return;
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Your weekly spending report is ready 📊',
+      body: 'Tap to see where your money went this week.',
+      data: { type: 'weekly-report' },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+      weekday: 1, // 1 = Sunday (device-local; IST for this user)
+      hour: 20,
+      minute: 15,
+      channelId: REPORTS_CHANNEL,
+    },
+  });
 }
 
 /** Pick 2 alternate categories that differ from the guess. */

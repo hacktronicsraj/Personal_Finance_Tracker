@@ -1,12 +1,15 @@
+import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { fetchMandates, MandateRow } from '../../src/api/client';
 import { AppHeader } from '../../src/components/AppHeader';
 import { TxnItem } from '../../src/components/TxnItem';
-import { categoryColor, categoryLight, categoryTint, formatNum } from '../../src/config';
+import { categoryColor, formatNum } from '../../src/config';
 import { monthRange } from '../../src/dates';
 import { useSummary, useTransactions } from '../../src/hooks';
+import { nextDueDate, formatDueDate, platformLabel } from '../../src/mandates';
 import { Card, Chip, colors, Kicker, Loading, Money, Muted, SectionLabel } from '../../src/ui';
 
 export default function Dashboard() {
@@ -15,12 +18,14 @@ export default function Dashboard() {
   const summary = useSummary({ from: range.from, to: range.to });
   const prev = useSummary({ from: prevRange.from, to: prevRange.to });
   const txns = useTransactions();
+  const mandatesQ = useQuery<MandateRow[]>({ queryKey: ['mandates'], queryFn: fetchMandates, staleTime: 5 * 60 * 1000 });
 
   const refreshing = summary.isFetching || txns.isFetching;
   const onRefresh = () => {
     summary.refetch();
     prev.refetch();
     txns.refetch();
+    mandatesQ.refetch();
   };
 
   const total = summary.data?.totalSpent ?? 0;
@@ -33,6 +38,19 @@ export default function Dashboard() {
   const syncedAt = txns.dataUpdatedAt
     ? new Date(txns.dataUpdatedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
     : null;
+
+  // Upcoming mandates (active, due within 7 days)
+  const upcoming = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekAhead = new Date(today);
+    weekAhead.setDate(today.getDate() + 7);
+    return (mandatesQ.data ?? [])
+      .filter((m) => m.active)
+      .map((m) => ({ mandate: m, due: nextDueDate(m.day_of_cycle, m.frequency) }))
+      .filter(({ due }) => due >= today && due <= weekAhead)
+      .sort((a, b) => a.due.getTime() - b.due.getTime());
+  }, [mandatesQ.data]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
@@ -86,6 +104,37 @@ export default function Dashboard() {
           )}
         </Card>
 
+        {upcoming.length > 0 && (
+          <>
+            <SectionLabel title="Upcoming" action="Mandates →" onAction={() => router.push('/mandates')} />
+            <Card style={{ paddingVertical: 6 }}>
+              {upcoming.map(({ mandate: m, due }) => (
+                <Pressable
+                  key={m.id}
+                  onPress={() => router.push('/mandates')}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${m.name}, ₹${formatNum(m.amount)}, due ${formatDueDate(due)}`}
+                  style={({ pressed }) => [styles.upcomingRow, pressed && { opacity: 0.55 }]}
+                >
+                  <View style={styles.upcomingTile}>
+                    <Text style={styles.upcomingInitial}>{m.name.charAt(0).toUpperCase()}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.upcomingName} numberOfLines={1}>{m.name}</Text>
+                    <Text style={styles.upcomingSub}>{platformLabel(m.platform)}</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.upcomingAmount}>₹{formatNum(m.amount)}</Text>
+                    <Text style={[styles.upcomingDue, formatDueDate(due) === 'Today' && { color: colors.accent }]}>
+                      {formatDueDate(due)}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+            </Card>
+          </>
+        )}
+
         {needsReview.length > 0 && (
           <>
             <SectionLabel
@@ -98,12 +147,12 @@ export default function Dashboard() {
                 <Pressable
                   key={t.id}
                   onPress={() => router.push(`/classify/${t.id}`)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Review ${t.merchant ?? 'unknown merchant'}, ₹${formatNum(t.amount)}, guessed ${t.category}`}
                   style={({ pressed }) => [styles.reviewRow, pressed && { opacity: 0.55 }]}
                 >
-                  <View style={[styles.reviewTile, { backgroundColor: categoryTint(t.category) }]}>
-                    <Text style={{ color: categoryLight(t.category), fontWeight: '800', fontSize: 14 }}>
-                      {(t.merchant ?? '?').charAt(0).toUpperCase()}
-                    </Text>
+                  <View style={styles.reviewTile}>
+                    <Text style={styles.reviewInitial}>{(t.merchant ?? '?').charAt(0).toUpperCase()}</Text>
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.reviewName} numberOfLines={1}>{t.merchant ?? 'Unknown'}</Text>
@@ -127,6 +176,17 @@ export default function Dashboard() {
           )}
         </Card>
       </ScrollView>
+
+      {/* Quick add a spend without leaving Home. */}
+      <Pressable
+        onPress={() => router.push('/add')}
+        style={({ pressed }) => [styles.fab, pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] }]}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel="Add a spend"
+      >
+        <Text style={styles.fabPlus}>+</Text>
+      </Pressable>
     </SafeAreaView>
   );
 }
@@ -145,8 +205,51 @@ const styles = StyleSheet.create({
   legDot: { width: 9, height: 9, borderRadius: 3 },
   legName: { color: colors.text, fontSize: 12, fontWeight: '600', flex: 1 },
   legVal: { color: colors.ghost, fontSize: 11.5, fontVariant: ['tabular-nums'] },
-  reviewRow: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 8 },
-  reviewTile: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  reviewName: { color: colors.text, fontSize: 13.5, fontWeight: '600' },
-  reviewSub: { color: colors.ghost, fontSize: 11, marginTop: 1, fontVariant: ['tabular-nums'] },
+  reviewRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
+  reviewTile: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface3,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+  },
+  reviewInitial: { color: colors.sub, fontSize: 15, fontWeight: '700' },
+  reviewName: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  reviewSub: { color: colors.ghost, fontSize: 11.5, marginTop: 1, fontVariant: ['tabular-nums'] },
+  fab: {
+    position: 'absolute',
+    right: 18,
+    bottom: 22,
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    backgroundColor: colors.text,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.text,
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
+  },
+  fabPlus: { color: colors.bg, fontSize: 30, fontWeight: '700', lineHeight: 34, marginTop: -2 },
+  upcomingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
+  upcomingTile: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface3,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+  },
+  upcomingInitial: { color: colors.sub, fontSize: 14, fontWeight: '700' },
+  upcomingName: { color: colors.text, fontSize: 13.5, fontWeight: '600' },
+  upcomingSub: { color: colors.ghost, fontSize: 11, marginTop: 1 },
+  upcomingAmount: { color: colors.text, fontSize: 13.5, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  upcomingDue: { color: colors.sub, fontSize: 10.5, fontWeight: '600', marginTop: 1 },
 });

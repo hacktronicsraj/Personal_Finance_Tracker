@@ -2,40 +2,46 @@ import { Tabs } from 'expo-router';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { colors } from '../../src/ui';
 
+// Active tab: white label (tint) but emerald icon — the accent marks "you are here".
 const stroke = (color: string) =>
-  ({ stroke: color, strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', fill: 'none' }) as const;
+  ({ stroke: color, strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', fill: 'none' }) as const;
+const iconColor = (color: string, focused: boolean) => (focused ? colors.accent : color);
 
-function HomeIcon({ color }: { color: string }) {
+type IconProps = { color: string; focused: boolean };
+
+function HomeIcon({ color, focused }: IconProps) {
+  const s = stroke(iconColor(color, focused));
   return (
-    <Svg width={20} height={20} viewBox="0 0 24 24">
-      <Rect x={4} y={4} width={7} height={7} rx={2} {...stroke(color)} />
-      <Rect x={13} y={4} width={7} height={7} rx={2} {...stroke(color)} />
-      <Rect x={4} y={13} width={7} height={7} rx={2} {...stroke(color)} />
-      <Rect x={13} y={13} width={7} height={7} rx={2} {...stroke(color)} />
+    <Svg width={21} height={21} viewBox="0 0 24 24">
+      <Rect x={4} y={4} width={7} height={7} rx={2} {...s} />
+      <Rect x={13} y={4} width={7} height={7} rx={2} {...s} />
+      <Rect x={4} y={13} width={7} height={7} rx={2} {...s} />
+      <Rect x={13} y={13} width={7} height={7} rx={2} {...s} />
     </Svg>
   );
 }
-function ActivityIcon({ color }: { color: string }) {
+function ActivityIcon({ color, focused }: IconProps) {
   return (
-    <Svg width={20} height={20} viewBox="0 0 24 24">
-      <Path d="M5 7h14M5 12h14M5 17h9" {...stroke(color)} />
+    <Svg width={21} height={21} viewBox="0 0 24 24">
+      <Path d="M5 7h14M5 12h14M5 17h9" {...stroke(iconColor(color, focused))} />
     </Svg>
   );
 }
-function InsightsIcon({ color }: { color: string }) {
+function InsightsIcon({ color, focused }: IconProps) {
   return (
-    <Svg width={20} height={20} viewBox="0 0 24 24">
-      <Path d="M5 19V11M12 19V5M19 19v-8" {...stroke(color)} />
+    <Svg width={21} height={21} viewBox="0 0 24 24">
+      <Path d="M5 19V11M12 19V5M19 19v-8" {...stroke(iconColor(color, focused))} />
     </Svg>
   );
 }
-function SettingsIcon({ color }: { color: string }) {
+function SettingsIcon({ color, focused }: IconProps) {
+  const s = stroke(iconColor(color, focused));
   return (
-    <Svg width={20} height={20} viewBox="0 0 24 24">
-      <Circle cx={12} cy={12} r={3.2} {...stroke(color)} />
+    <Svg width={21} height={21} viewBox="0 0 24 24">
+      <Circle cx={12} cy={12} r={3.2} {...s} />
       <Path
         d="M12 4v2.4M12 17.6V20M4 12h2.4M17.6 12H20M6.3 6.3L8 8M16 16l1.7 1.7M17.7 6.3L16 8M8 16l-1.7 1.7"
-        {...stroke(color)}
+        {...s}
       />
     </Svg>
   );
@@ -51,8 +57,8 @@ export default function TabsLayout() {
           borderTopColor: colors.hairline,
           borderTopWidth: 1,
         },
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.ghost,
+        tabBarActiveTintColor: colors.text,
+        tabBarInactiveTintColor: colors.faint,
         tabBarLabelStyle: { fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
       }}
     >

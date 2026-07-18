@@ -3,9 +3,10 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, G } from 'react-native-svg';
 import { AppHeader } from '../../src/components/AppHeader';
+import { ChevronLeftIcon, ChevronRightIcon } from '../../src/components/icons';
 import { categoryColor, categoryShort, formatNum } from '../../src/config';
 import { monthRange } from '../../src/dates';
-import { useSummary } from '../../src/hooks';
+import { useSummary, useTagAnalytics } from '../../src/hooks';
 import { Card, colors, Kicker, Loading, Money, Muted, SectionLabel } from '../../src/ui';
 
 const SIZE = 128;
@@ -51,13 +52,17 @@ function Donut({ slices, total }: { slices: { category: string; total: number }[
 
 export default function Analytics() {
   const [offset, setOffset] = useState(0);
+  const [tagsAllTime, setTagsAllTime] = useState(false);
   const range = useMemo(() => monthRange(offset), [offset]);
   const { data, isLoading } = useSummary({ from: range.from, to: range.to });
+  const { data: tagData } = useTagAnalytics(tagsAllTime ? undefined : { from: range.from, to: range.to });
 
   const total = data?.totalSpent ?? 0;
   const cats = data?.byCategory ?? [];
   const merchants = data?.topMerchants ?? [];
   const maxMerchant = merchants[0]?.total ?? 1;
+  const tags = tagData ?? [];
+  const maxTag = tags[0]?.total ?? 1;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
@@ -65,16 +70,26 @@ export default function Analytics() {
         <AppHeader title="Insights" meta="llm-classified" />
 
         <View style={styles.mnav}>
-          <Pressable onPress={() => setOffset((o) => o - 1)} style={styles.nb} hitSlop={6}>
-            <Text style={styles.nbText}>‹</Text>
+          <Pressable
+            onPress={() => setOffset((o) => o - 1)}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="Previous month"
+            style={({ pressed }) => [styles.nb, pressed && { opacity: 0.6 }]}
+          >
+            <ChevronLeftIcon size={17} />
           </Pressable>
-          <Text style={styles.mLabel}>{range.label}</Text>
+          <Text style={styles.mLabel} accessibilityRole="header">{range.label}</Text>
           <Pressable
             onPress={() => setOffset((o) => Math.min(0, o + 1))}
-            style={[styles.nb, offset === 0 && { opacity: 0.35 }]}
+            disabled={offset === 0}
             hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="Next month"
+            accessibilityState={{ disabled: offset === 0 }}
+            style={({ pressed }) => [styles.nb, offset === 0 && { opacity: 0.35 }, pressed && { opacity: 0.6 }]}
           >
-            <Text style={styles.nbText}>›</Text>
+            <ChevronRightIcon size={17} />
           </Pressable>
         </View>
 
@@ -122,6 +137,29 @@ export default function Analytics() {
                 ))
               )}
             </Card>
+
+            {tags.length > 0 && (
+              <>
+                <SectionLabel
+                  title="Tags"
+                  action={tagsAllTime ? 'This month' : 'All time'}
+                  onAction={() => setTagsAllTime((v) => !v)}
+                />
+                <Card style={{ paddingVertical: 8 }}>
+                  {tags.map((t, i) => (
+                    <View key={t.tag} style={[styles.mrow, i > 0 && styles.mrowDivider]}>
+                      <View style={styles.mtop}>
+                        <Text style={styles.mname} numberOfLines={1}>#{t.tag}</Text>
+                        <Text style={styles.mval}>₹{formatNum(t.total)} · {t.count}×</Text>
+                      </View>
+                      <View style={styles.mbar}>
+                        <View style={[styles.mfill, { width: `${Math.max(4, Math.round((t.total / maxTag) * 100))}%` }]} />
+                      </View>
+                    </View>
+                  ))}
+                </Card>
+              </>
+            )}
           </>
         )}
       </ScrollView>
@@ -132,16 +170,15 @@ export default function Analytics() {
 const styles = StyleSheet.create({
   mnav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 2 },
   nb: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.hairline,
     backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  nbText: { color: colors.sub, fontSize: 15, lineHeight: 18 },
   mLabel: { color: colors.text, fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
   donutWrap: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   donutCenter: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
