@@ -21,6 +21,10 @@ export interface ClassifyRequest {
   // A category the user chose on the confirm screen — server stores it directly
   // (marked corrected) and skips the LLM classification for this transaction.
   category?: string;
+  // Optional free-text note the user attached at add time.
+  note?: string;
+  // Optional tags the user attached at add time.
+  tags?: string[];
 }
 
 export interface Classification {
@@ -38,9 +42,11 @@ export interface FewShot {
 
 export interface Env {
   DB: D1Database;
+  ATTACHMENTS: R2Bucket;
   API_TOKEN?: string;
   LLM_MODE?: string; // 'mock' | 'live'
   LLM_BASE_URL?: string;
   LLM_MODEL?: string;
   LLM_API_KEY?: string;
+  LLM_REPORT_MODEL?: string; // M7 — weekly digest model (defaults to a strong free-tier model)
 }

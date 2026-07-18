@@ -1,6 +1,15 @@
 import type { Category } from './categories';
 import type { Classification, ParsedTxn } from './types';
 
+export function normalizeMerchant(merchant: string): string {
+  let m = (merchant || '').toUpperCase();
+  m = m.replace(/@[A-Z0-9.\-]+/g, '');
+  m = m.replace(/\*.*$/g, '');
+  m = m.replace(/\s*-\s*(ORDER|REF|TXN|ID)?\s*[0-9]+.*$/g, '');
+  m = m.replace(/[^A-Z0-9 ]/g, ' ');
+  return m.replace(/\s+/g, ' ').trim();
+}
+
 /**
  * Offline, deterministic classifier. Used as the "mock" LLM in local dev and as a
  * fallback when a live LLM call fails. Matches merchant/raw text against keyword

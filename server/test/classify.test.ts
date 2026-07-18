@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ruleClassify } from '../src/classify';
+import { ruleClassify, normalizeMerchant } from '../src/classify';
 
 describe('ruleClassify', () => {
   it('classifies a Groww UPI investment debit as Transfers', () => {
@@ -41,5 +41,15 @@ describe('ruleClassify', () => {
 
   it('falls back to Other for unknown debit', () => {
     expect(ruleClassify({ amount: 90, direction: 'debit', merchant: 'SATYAWAN JADAV' }).category).toBe('Other');
+  });
+});
+
+describe('normalizeMerchant', () => {
+  it('strips UPI handles, order numbers, and cleans whitespace', () => {
+    expect(normalizeMerchant('Swiggy*Order-4821')).toBe('SWIGGY');
+    expect(normalizeMerchant('UBER@okicici')).toBe('UBER');
+    expect(normalizeMerchant('ZOMATO-ORDER 8129')).toBe('ZOMATO');
+    expect(normalizeMerchant('Amazon Pay - TXN123')).toBe('AMAZON PAY');
+    expect(normalizeMerchant('  blinkit   @hdfc ')).toBe('BLINKIT');
   });
 });
