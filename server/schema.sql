@@ -24,7 +24,10 @@ CREATE TABLE IF NOT EXISTS transactions (
   occurred_at  TEXT,                 -- ISO-8601
   category     TEXT NOT NULL DEFAULT 'Other',
   confidence   REAL NOT NULL DEFAULT 0,
-  notes        TEXT,
+  notes        TEXT,                 -- classifier notes (rule:/llm:) — not user-facing
+  user_note    TEXT,                 -- optional free-text the user adds/edits
+  tags         TEXT,                 -- JSON array of user tags e.g. '["trip","work"]'
+  mandate_id   TEXT,                 -- links a debit to the mandate it satisfied (F1 auto-match)
   source       TEXT NOT NULL DEFAULT 'sms',
   corrected    INTEGER NOT NULL DEFAULT 0,
   created_at   TEXT NOT NULL,        -- ISO-8601
@@ -65,3 +68,52 @@ INSERT OR IGNORE INTO categories (id, name, icon, color, is_default) VALUES
   ('transfers',     'Transfers',         'swap-horizontal','#6b7280', 1),
   ('income',        'Income',            'cash',          '#22c55e', 1),
   ('other',         'Other',             'ellipsis-horizontal', '#94a3b8', 1);
+
+CREATE TABLE IF NOT EXISTS merchant_rules (
+  id         TEXT PRIMARY KEY,
+  pattern    TEXT NOT NULL UNIQUE,
+  category   TEXT NOT NULL,
+  source     TEXT NOT NULL CHECK (source IN ('learned','manual')),
+  hit_count  INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mandates (
+  id            TEXT PRIMARY KEY,
+  name          TEXT NOT NULL,
+  platform      TEXT NOT NULL CHECK (platform IN ('gpay','phonepe','paytm','bank_autopay','card','other')),
+  amount        REAL NOT NULL,
+  day_of_cycle  INTEGER NOT NULL,
+  frequency     TEXT NOT NULL DEFAULT 'monthly' CHECK (frequency IN ('weekly','monthly','quarterly','yearly')),
+  category      TEXT NOT NULL DEFAULT 'Bills & Utilities',
+  merchant_hint TEXT,
+  active        INTEGER NOT NULL DEFAULT 1,
+  notes         TEXT,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+
+-- Receipt attachments (M6). Bytes live in R2 (key = txn/<txn_id>/<id>); this row
+-- is the metadata index. Cascade-deleted with the parent transaction.
+CREATE TABLE IF NOT EXISTS attachments (
+  id         TEXT PRIMARY KEY,
+  txn_id     TEXT NOT NULL,
+  r2_key     TEXT NOT NULL,
+  mime       TEXT,
+  size       INTEGER,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_attach_txn ON attachments (txn_id);
+
+-- Digest reports (M7 weekly + monthly). Pre-rendered HTML + the structured JSON
+-- it came from.
+CREATE TABLE IF NOT EXISTS reports (
+  id           TEXT PRIMARY KEY,
+  period_start TEXT NOT NULL,
+  period_end   TEXT NOT NULL,
+  period_type  TEXT NOT NULL DEFAULT 'weekly',  -- 'weekly' | 'monthly'
+  summary_json TEXT,
+  html         TEXT,
+  created_at   TEXT NOT NULL
+);
