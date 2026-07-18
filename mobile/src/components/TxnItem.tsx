@@ -1,14 +1,14 @@
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { TxnRow } from '../api/client';
-import { categoryLight, categoryTint, formatNum } from '../config';
+import { formatNum } from '../config';
 import { timeOrDay } from '../dates';
-import { colors } from '../ui';
+import { colors, ripple } from '../ui';
 
 /**
- * One ledger row: merchant-initial tile tinted by category, name over
+ * One ledger row: uniform monochrome initial tile (Ink), merchant over
  * `category · when`, amount right-aligned in tabular numerals. Debits stay ink;
- * only credits get color (green) — matches the AMOLED design.
+ * only credits get the emerald accent.
  */
 export function TxnItem({ txn, divider }: { txn: TxnRow; divider?: boolean }) {
   const when = timeOrDay(txn.occurred_at ?? txn.created_at);
@@ -19,10 +19,13 @@ export function TxnItem({ txn, divider }: { txn: TxnRow; divider?: boolean }) {
   return (
     <Pressable
       onPress={() => router.push(`/transaction/${txn.id}`)}
-      style={[styles.row, divider && styles.divider]}
+      accessibilityRole="button"
+      accessibilityLabel={`${txn.merchant ?? 'Unknown'}, ${debit ? 'spent' : 'received'} ₹${formatNum(txn.amount)}, ${txn.category}, ${when}`}
+      android_ripple={ripple}
+      style={({ pressed }) => [styles.row, divider && styles.divider, pressed && { opacity: 0.7 }]}
     >
-      <View style={[styles.tile, { backgroundColor: categoryTint(txn.category) }]}>
-        <Text style={[styles.tileText, { color: categoryLight(txn.category) }]}>{initial}</Text>
+      <View style={styles.tile}>
+        <Text style={styles.tileText}>{initial}</Text>
       </View>
       <View style={styles.who}>
         <Text style={styles.merchant} numberOfLines={1}>
@@ -41,23 +44,26 @@ export function TxnItem({ txn, divider }: { txn: TxnRow; divider?: boolean }) {
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 10 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   divider: { borderTopWidth: 1, borderTopColor: colors.divider },
   tile: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.surface3,
+    borderWidth: 1,
+    borderColor: colors.hairline,
   },
-  tileText: { fontSize: 14, fontWeight: '800' },
+  tileText: { color: colors.sub, fontSize: 15, fontWeight: '700' },
   who: { flex: 1, minWidth: 0 },
-  merchant: { color: colors.text, fontSize: 13.5, fontWeight: '600' },
-  sub: { color: colors.ghost, fontSize: 11, marginTop: 1 },
+  merchant: { color: colors.text, fontSize: 14, fontWeight: '600', letterSpacing: -0.1 },
+  sub: { color: colors.ghost, fontSize: 11.5, marginTop: 2 },
   amt: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    letterSpacing: -0.3,
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: -0.2,
     fontVariant: ['tabular-nums'],
   },
 });
