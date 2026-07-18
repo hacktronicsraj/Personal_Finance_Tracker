@@ -17,10 +17,10 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     justifyContent: 'space-between',
     paddingHorizontal: 2,
-    paddingTop: 10,
-    paddingBottom: 12,
+    paddingTop: 14,
+    paddingBottom: 14,
   },
-  title: { color: colors.text, fontSize: 19, fontWeight: '800', letterSpacing: -0.4 },
+  title: { color: colors.text, fontSize: 24, fontWeight: '900', letterSpacing: -0.5 },
   meta: {
     fontFamily: mono,
     fontSize: 10,

@@ -20,16 +20,16 @@ export type Category = (typeof CATEGORIES)[number];
  * `icon` survives for notification copy only; the UI itself uses initials + dots.
  */
 export const CATEGORY_META: Record<Category, { color: string; light: string; icon: string }> = {
-  'Food & Dining': { color: '#ef4444', light: '#fca5a5', icon: '🍽️' },
-  Groceries: { color: '#f59e0b', light: '#fcd34d', icon: '🛒' },
-  Transport: { color: '#3b82f6', light: '#93c5fd', icon: '🚗' },
-  Shopping: { color: '#8b5cf6', light: '#c4b5fd', icon: '🛍️' },
-  'Bills & Utilities': { color: '#14b8a6', light: '#5eead4', icon: '⚡' },
-  Entertainment: { color: '#ec4899', light: '#f9a8d4', icon: '🎬' },
-  Health: { color: '#10b981', light: '#6ee7b7', icon: '💊' },
-  Transfers: { color: '#8A8F9E', light: '#c8ccd8', icon: '🔁' },
-  Income: { color: '#22c55e', light: '#86efac', icon: '💰' },
-  Other: { color: '#94a3b8', light: '#aab1c2', icon: '❓' },
+  'Food & Dining': { color: '#F87171', light: '#fca5a5', icon: '🍽️' },
+  Groceries: { color: '#FBBF24', light: '#fcd34d', icon: '🛒' },
+  Transport: { color: '#60A5FA', light: '#93c5fd', icon: '🚗' },
+  Shopping: { color: '#C084FC', light: '#c4b5fd', icon: '🛍️' },
+  'Bills & Utilities': { color: '#2DD4BF', light: '#5eead4', icon: '⚡' },
+  Entertainment: { color: '#F472B6', light: '#f9a8d4', icon: '🎬' },
+  Health: { color: '#34D399', light: '#6ee7b7', icon: '💊' },
+  Transfers: { color: '#94A3B8', light: '#c8ccd8', icon: '🔁' },
+  Income: { color: '#34D399', light: '#86efac', icon: '💰' },
+  Other: { color: '#71717A', light: '#aab1c2', icon: '❓' },
 };
 
 const meta = (name: string) => (CATEGORY_META as Record<string, { color: string; light: string; icon: string }>)[name];

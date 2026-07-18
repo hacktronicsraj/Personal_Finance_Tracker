@@ -14,27 +14,33 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { categoryColor, formatNum } from './config';
 
 /**
- * AMOLED design tokens.
- * True-black ground; surfaces one step up with hairline borders instead of
- * shadows; a single indigo accent marks everything interactive; category color
- * appears only as data (dots, tiles, bars, slices).
+ * "Ink" design tokens.
+ * Monochrome foundation (true black → white) with a single restrained EMERALD
+ * accent used only for positive states + the active nav item. Primary actions
+ * (buttons, FAB, selected pills) are WHITE. Category color is data — a small dot,
+ * never a fill or a tint.
  */
 export const colors = {
   bg: '#000000',
-  surface: '#0E0F13',
-  surface2: '#15161C',
-  hairline: '#1E2029',
-  divider: '#14151B',
-  text: '#F4F5F9',
-  sub: '#9BA0B2',
-  ghost: '#5D6172',
-  accent: '#7C83FF',
-  accentDim: 'rgba(124,131,255,0.16)',
-  onAccent: '#0B0B12',
-  pos: '#3ADC97',
-  neg: '#FF7A7A',
-  amber: '#FBBF24',
-  amberDim: 'rgba(245,158,11,0.14)',
+  surface: '#0A0A0C',
+  surface2: '#121214',
+  surface3: '#1A1A1E',
+  hairline: '#222226',
+  hairline2: '#2E2E34',
+  divider: '#16161A',
+  text: '#FAFAFA',
+  sub: '#A1A1AA', // text-2
+  ghost: '#6B6B73', // text-3
+  faint: '#444448', // text-4 — hints / disabled
+  accent: '#34D399', // emerald — positive + active only
+  accentPress: '#10B981',
+  accentDim: 'rgba(52,211,153,0.12)',
+  accentLine: 'rgba(52,211,153,0.32)',
+  onAccent: '#000000',
+  pos: '#34D399',
+  neg: '#F87171',
+  amber: '#F59E0B',
+  amberDim: 'rgba(245,158,11,0.10)',
 };
 
 export const mono = Platform.select({ ios: 'Menlo', default: 'monospace' });
@@ -75,7 +81,7 @@ export function Money({ value, size = 40, sign }: { value: number; size?: number
   return (
     <Text style={[styles.money, { fontSize: size }]}>
       {sign ? `${sign} ` : ''}
-      <Text style={{ color: colors.accent }}>₹</Text>
+      <Text style={{ color: colors.sub, fontWeight: '600' }}>₹</Text>
       {formatNum(value)}
     </Text>
   );
@@ -95,13 +101,22 @@ export function SectionLabel({ title, action, onAction }: { title: string; actio
     <View style={styles.sectionLabel}>
       <Text style={styles.sectionTitle}>{title}</Text>
       {action ? (
-        <Pressable onPress={onAction} hitSlop={8}>
+        <Pressable
+          onPress={onAction}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel={action}
+          style={({ pressed }) => pressed && { opacity: 0.5 }}
+        >
           <Text style={styles.sectionAction}>{action}</Text>
         </Pressable>
       ) : null}
     </View>
   );
 }
+
+/** Subtle press ripple used across surfaces (Android-only app → native feel). */
+export const ripple = { color: 'rgba(255,255,255,0.08)' } as const;
 
 export function Button({
   title,
@@ -118,6 +133,10 @@ export function Button({
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityState={{ disabled: !!disabled }}
+      android_ripple={variant === 'primary' ? { color: 'rgba(0,0,0,0.10)' } : ripple}
       style={({ pressed }) => [
         styles.btn,
         variant === 'primary' ? styles.btnPrimary : styles.btnGhost,
@@ -129,16 +148,39 @@ export function Button({
   );
 }
 
-/** Category pill: colored dot + name; selected = filled with the category hue. */
+/** Red-styled ghost button for destructive actions like delete. */
+export function DangerButton({ title, onPress }: { title: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      android_ripple={{ color: 'rgba(248,113,113,0.12)' }}
+      style={({ pressed }) => [
+        styles.btn,
+        styles.btnDanger,
+        pressed && { opacity: 0.6 },
+      ]}
+    >
+      <Text style={styles.btnDangerText}>{title}</Text>
+    </Pressable>
+  );
+}
+
+/** Category pill: category dot + name. Selected = white fill (Ink primary), not the hue. */
 export function CategoryPill({ name, selected, onPress }: { name: string; selected?: boolean; onPress?: () => void }) {
   const c = categoryColor(name);
   return (
     <Pressable
       onPress={onPress}
-      style={[styles.pill, selected && { backgroundColor: c, borderColor: c }]}
+      accessibilityRole="button"
+      accessibilityLabel={name}
+      accessibilityState={{ selected: !!selected }}
+      android_ripple={ripple}
+      style={({ pressed }) => [styles.pill, selected && styles.pillSel, pressed && { opacity: 0.7 }]}
     >
-      {!selected && <View style={[styles.pillDot, { backgroundColor: c }]} />}
-      <Text style={[styles.pillText, selected && { color: colors.onAccent }]}>{name}</Text>
+      <View style={[styles.pillDot, { backgroundColor: c, opacity: selected ? 0.7 : 1 }]} />
+      <Text style={[styles.pillText, selected && styles.pillTextSel]}>{name}</Text>
     </Pressable>
   );
 }
@@ -167,10 +209,15 @@ const styles = StyleSheet.create({
   scroll: { padding: 16, gap: 12 },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: 18,
+    borderRadius: 22,
     padding: 16,
     borderWidth: 1,
     borderColor: colors.hairline,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
   h1: { color: colors.text, fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
   h2: { color: colors.text, fontSize: 17, fontWeight: '700', letterSpacing: -0.2 },
@@ -205,20 +252,26 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { color: colors.sub, fontSize: 12.5, fontWeight: '700' },
   sectionAction: { color: colors.accent, fontSize: 11, fontWeight: '600' },
-  btn: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 14, alignItems: 'center' },
-  btnPrimary: { backgroundColor: colors.accent },
-  btnGhost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.hairline },
-  btnText: { color: colors.onAccent, fontWeight: '800', fontSize: 14 },
+  btn: { paddingVertical: 16, paddingHorizontal: 18, borderRadius: 16, alignItems: 'center', overflow: 'hidden' },
+  btnPrimary: { backgroundColor: colors.text },
+  btnGhost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.hairline2 },
+  btnDanger: { backgroundColor: 'transparent', borderWidth: 1, borderColor: 'rgba(248,113,113,0.35)' },
+  btnDangerText: { color: colors.neg, fontWeight: '700', fontSize: 15 },
+  btnText: { color: colors.onAccent, fontWeight: '700', fontSize: 15 },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 13,
+    gap: 7,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
     borderRadius: 999,
-    borderWidth: 1.5,
-    borderColor: '#262834',
+    borderWidth: 1,
+    borderColor: colors.hairline2,
+    backgroundColor: colors.surface2,
+    overflow: 'hidden',
   },
+  pillSel: { backgroundColor: colors.text, borderColor: colors.text },
   pillDot: { width: 8, height: 8, borderRadius: 4 },
-  pillText: { color: colors.sub, fontSize: 11.5, fontWeight: '600' },
+  pillText: { color: colors.sub, fontSize: 12.5, fontWeight: '600' },
+  pillTextSel: { color: colors.bg },
 });
