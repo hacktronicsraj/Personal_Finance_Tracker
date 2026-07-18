@@ -1,10 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { updateCategory } from '../../src/api/client';
+import { Alert, StyleSheet, Text, View } from 'react-native';
+import { deleteTransaction, updateCategory } from '../../src/api/client';
 import { CATEGORIES } from '../../src/config';
-import { setLocalCategory } from '../../src/db/database';
+import { deleteTxn, setLocalCategory } from '../../src/db/database';
 import { useTransaction } from '../../src/hooks';
 import { Button, Card, CategoryPill, Chip, colors, Loading, Money, Muted, Screen } from '../../src/ui';
 
@@ -28,6 +28,27 @@ export default function ClassifyScreen() {
         /* offline: local change stays, reconciles on next sync */
       });
     router.back();
+  }
+
+  function confirmDelete() {
+    if (!txn) return;
+    Alert.alert('Delete transaction?', 'This removes it from your spending and cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteTransaction(txn.id);
+            await deleteTxn(txn.id);
+            qc.invalidateQueries();
+            router.back();
+          } catch {
+            Alert.alert('Could not delete', 'Check your connection and try again.');
+          }
+        },
+      },
+    ]);
   }
 
   if (isLoading) return <Screen><Loading /></Screen>;
@@ -72,6 +93,8 @@ export default function ClassifyScreen() {
         onPress={save}
         disabled={!selected}
       />
+      <View style={{ height: 10 }} />
+      <Button title="Delete this expense" variant="ghost" onPress={confirmDelete} />
     </Screen>
   );
 }
