@@ -46,14 +46,20 @@ describe('weekWindowIST', () => {
 });
 
 describe('monthWindowIST', () => {
-  it('covers the current IST calendar month at offset 0', () => {
+  const DAY = 86400000;
+  it('shifts the window back one day (last day of prev month → second-to-last of this)', () => {
     const w = monthWindowIST(Date.parse('2026-07-17T06:00:00.000Z'));
-    expect(w.start).toBe(new Date(Date.UTC(2026, 6, 1) - 5.5 * 3600000).toISOString()); // 1 Jul 00:00 IST
-    expect(w.end).toBe(new Date(Date.UTC(2026, 7, 1) - 5.5 * 3600000 - 1).toISOString()); // 31 Jul 23:59:59.999 IST
-    expect(w.label).toBe('July 2026');
+    expect(w.start).toBe(new Date(Date.UTC(2026, 6, 1) - 5.5 * 3600000 - DAY).toISOString()); // 30 Jun 00:00 IST
+    expect(w.end).toBe(new Date(Date.UTC(2026, 7, 1) - 5.5 * 3600000 - DAY - 1).toISOString()); // 30 Jul 23:59:59.999 IST
+    expect(w.label).toBe('July 2026'); // label stays the nominal month
   });
 
-  it('offset steps whole months back and abuts the previous month', () => {
+  it('tiles with no overlap: this window starts exactly where the previous ends + 1ms', () => {
+    const w = monthWindowIST(Date.parse('2026-07-17T06:00:00.000Z'));
+    expect(Date.parse(w.prevEnd)).toBe(Date.parse(w.start) - 1);
+  });
+
+  it('offset steps whole months back', () => {
     const w = monthWindowIST(Date.parse('2026-07-17T06:00:00.000Z'), 1);
     expect(w.label).toBe('June 2026');
     expect(Date.parse(w.prevEnd)).toBe(Date.parse(w.start) - 1);

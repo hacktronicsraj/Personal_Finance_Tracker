@@ -53,18 +53,23 @@ export function weekWindowIST(nowMs: number): WeekWindow {
 }
 
 /**
- * A calendar month in IST as UTC ISO bounds. `offset` months back from the
- * current IST month (0 = this month so far, 1 = last full month…). Pure.
+ * A calendar month in IST as UTC ISO bounds, shifted back one day: the month runs
+ * from the last day of the previous calendar month to the second-to-last day of
+ * this one (e.g. August = Jul 31 → Aug 30 IST). `offset` counts whole months back
+ * (0 = this month so far, 1 = last full month…). The label stays the nominal
+ * month. Pure.
  */
 export function monthWindowIST(nowMs: number, offset = 0): WeekWindow {
+  const DAY = 86400000;
   const ist = new Date(nowMs + IST_OFFSET);
   const y = ist.getUTCFullYear();
   const m = ist.getUTCMonth() - offset;
-  const startUtc = Date.UTC(y, m, 1) - IST_OFFSET;
-  const endUtc = Date.UTC(y, m + 1, 1) - IST_OFFSET - 1;
-  const prevStartUtc = Date.UTC(y, m - 1, 1) - IST_OFFSET;
+  const startUtc = Date.UTC(y, m, 1) - IST_OFFSET - DAY;
+  const endUtc = Date.UTC(y, m + 1, 1) - IST_OFFSET - DAY - 1;
+  const prevStartUtc = Date.UTC(y, m - 1, 1) - IST_OFFSET - DAY;
+  // Label from mid-month so the one-day shift never bleeds into an adjacent month.
   const label = new Intl.DateTimeFormat('en-IN', { month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' })
-    .format(new Date(startUtc + IST_OFFSET));
+    .format(new Date(Date.UTC(y, m, 15)));
   return {
     start: new Date(startUtc).toISOString(),
     end: new Date(endUtc).toISOString(),

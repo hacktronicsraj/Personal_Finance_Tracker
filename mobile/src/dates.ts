@@ -1,14 +1,21 @@
-/** Month window helpers shared by Dashboard and Insights. */
+const DAY_MS = 86400000;
+
+/**
+ * Month window helpers shared by Dashboard and Insights. The window is shifted
+ * back one day: a "month" runs from the last day of the previous calendar month
+ * to the second-to-last day of this one (e.g. August = Jul 31 → Aug 30). Months
+ * still tile with no overlap; the label stays the nominal month.
+ */
 export function monthRange(offset = 0) {
   const now = new Date();
   const y = now.getUTCFullYear();
   const m = now.getUTCMonth() + offset;
-  const first = new Date(Date.UTC(y, m, 1));
+  const label = new Date(Date.UTC(y, m, 1));
   return {
-    from: first.toISOString(),
-    to: new Date(Date.UTC(y, m + 1, 0, 23, 59, 59)).toISOString(),
-    label: first.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
-    monthName: first.toLocaleDateString('en-IN', { month: 'long' }),
+    from: new Date(Date.UTC(y, m, 1) - DAY_MS).toISOString(),
+    to: new Date(Date.UTC(y, m + 1, 0, 23, 59, 59) - DAY_MS).toISOString(),
+    label: label.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+    monthName: label.toLocaleDateString('en-IN', { month: 'long' }),
   };
 }
 
