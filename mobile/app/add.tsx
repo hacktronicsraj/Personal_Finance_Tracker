@@ -8,6 +8,7 @@ import { removeReview } from '../src/db/database';
 import { screenshotToPayment, textToPayment } from '../src/capture';
 import { CameraIcon, CloseIcon, FileIcon, GalleryIcon } from '../src/components/icons';
 import { TagEditor } from '../src/components/TagEditor';
+import { WhenField } from '../src/components/WhenPicker';
 import { useAllTags, useCategories } from '../src/hooks';
 import { parseTransaction } from '../src/parse/parser';
 import type { ParsedTxn } from '../src/parse/types';
@@ -163,6 +164,16 @@ export default function AddScreen() {
               placeholderTextColor={colors.ghost}
               autoCapitalize="words"
               style={inputStyle}
+            />
+          </View>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>
+              When <Text style={styles.hint}>· optional, defaults to now</Text>
+            </Text>
+            <WhenField
+              value={occurredAt ? new Date(occurredAt) : null}
+              onChange={(d) => setOccurredAt(d ? d.toISOString() : undefined)}
             />
           </View>
 
