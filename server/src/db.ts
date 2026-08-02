@@ -195,7 +195,9 @@ export function buildTxnListQuery(q: TxnQuery): { sql: string; binds: unknown[] 
   if (q.tag) { where.push('EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value = ?)'); binds.push(q.tag); }
   const sql =
     `SELECT * FROM transactions ${where.length ? 'WHERE ' + where.join(' AND ') : ''}` +
-    ` ORDER BY COALESCE(occurred_at, created_at) DESC LIMIT ?`;
+    // Sort by when the row was recorded, not the (possibly back-dated) txn date, so
+    // a just-added entry always lands at the top of the list.
+    ` ORDER BY created_at DESC LIMIT ?`;
   binds.push(q.limit ?? 200);
   return { sql, binds };
 }

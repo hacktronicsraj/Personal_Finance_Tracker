@@ -126,7 +126,9 @@ export async function deleteTxn(id: string): Promise<void> {
 export async function getCachedTxns(limit = 200): Promise<TxnRow[]> {
   const db = await getDb();
   return db.getAllAsync<TxnRow>(
-    `SELECT * FROM transactions ORDER BY COALESCE(occurred_at, created_at) DESC LIMIT ?`,
+    // Match the server: order by when it was recorded, so newly-added (even
+    // back-dated) entries appear first.
+    `SELECT * FROM transactions ORDER BY created_at DESC LIMIT ?`,
     [limit],
   );
 }

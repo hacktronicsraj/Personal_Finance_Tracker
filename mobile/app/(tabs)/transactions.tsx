@@ -72,7 +72,10 @@ function activeCount(f: Filters): number {
 function groupByDay(txns: TxnRow[]): { title: string; data: TxnRow[] }[] {
   const groups: { title: string; data: TxnRow[] }[] = [];
   for (const t of txns) {
-    const title = dayLabel(t.occurred_at ?? t.created_at);
+    // Group by the recorded day (created_at) so headers stay contiguous and unique
+    // under the created_at sort — a back-dated entry groups under the day it was
+    // logged, not its (older) transaction date. Each row still shows its txn time.
+    const title = dayLabel(t.created_at);
     const last = groups[groups.length - 1];
     if (last && last.title === title) last.data.push(t);
     else groups.push({ title, data: [t] });

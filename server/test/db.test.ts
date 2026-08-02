@@ -5,7 +5,7 @@ describe('buildTxnListQuery', () => {
   it('returns just an ordered LIMIT when no filters are set', () => {
     const { sql, binds } = buildTxnListQuery({});
     expect(sql).not.toContain('WHERE');
-    expect(sql).toContain('ORDER BY COALESCE(occurred_at, created_at) DESC');
+    expect(sql).toContain('ORDER BY created_at DESC');
     expect(binds).toEqual([200]); // default limit, last bind
   });
 
