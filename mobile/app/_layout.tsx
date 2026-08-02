@@ -32,9 +32,10 @@ async function handleNotificationResponse(response: Notifications.NotificationRe
   handledResponses.add(key);
 
   const data = req.content.data as { txnId?: string; type?: string };
-  // Weekly-report notification → open the latest report.
+  // Weekly-report notification → open the latest WEEKLY report specifically
+  // (scoped so a later-dated monthly report doesn't hijack "latest").
   if (data?.type === 'weekly-report') {
-    router.push('/report/latest');
+    router.push({ pathname: '/report/[id]', params: { id: 'latest', type: 'weekly' } });
     return;
   }
 

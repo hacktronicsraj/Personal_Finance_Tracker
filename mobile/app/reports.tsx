@@ -66,7 +66,10 @@ export default function Reports() {
 
   return (
     <Screen>
-      <Button title="View latest report" onPress={() => router.push('/report/latest')} />
+      <Button
+        title="View latest weekly report"
+        onPress={() => router.push({ pathname: '/report/[id]', params: { id: 'latest', type: 'weekly' } })}
+      />
 
       <Card>
         <Text style={styles.cardLabel}>Monthly report</Text>
@@ -110,7 +113,7 @@ export default function Reports() {
             return (
               <Pressable
                 key={r.id}
-                onPress={() => router.push(`/report/${r.id}`)}
+                onPress={() => router.push({ pathname: '/report/[id]', params: { id: r.id, type: r.period_type } })}
                 accessibilityRole="button"
                 accessibilityLabel={`${monthly ? 'Monthly' : 'Weekly'} report, ${label(r)}${t != null ? `, total ${formatINR(t)}` : ''}`}
                 android_ripple={ripple}

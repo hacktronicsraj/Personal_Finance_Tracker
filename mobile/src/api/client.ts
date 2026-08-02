@@ -266,11 +266,13 @@ export async function fetchReports(): Promise<ReportMeta[]> {
   return data.reports;
 }
 
-/** Fetch a report's rendered HTML as text (for offline caching + WebView). */
-export async function fetchReportHtml(idOrLatest: string): Promise<string> {
+/** Fetch a report's rendered HTML as text (for offline caching + WebView). When
+ * fetching 'latest', pass a `type` to scope to weekly/monthly. */
+export async function fetchReportHtml(idOrLatest: string, type?: 'weekly' | 'monthly'): Promise<string> {
   const { backendUrl, apiToken } = await getSettings();
   if (!backendUrl) throw new Error('Backend URL not configured');
-  const res = await fetch(`${backendUrl}/reports/${idOrLatest}`, {
+  const q = idOrLatest === 'latest' && type ? `?type=${type}` : '';
+  const res = await fetch(`${backendUrl}/reports/${idOrLatest}${q}`, {
     headers: apiToken ? { authorization: `Bearer ${apiToken}` } : {},
   });
   if (!res.ok) throw new Error(`report ${res.status}`);

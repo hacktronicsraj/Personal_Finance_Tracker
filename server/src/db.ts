@@ -599,8 +599,15 @@ export async function getReport(env: Env, id: string): Promise<ReportRow | null>
   return env.DB.prepare('SELECT * FROM reports WHERE id = ?').bind(id).first<ReportRow>();
 }
 
-export async function latestReport(env: Env): Promise<ReportRow | null> {
-  return env.DB.prepare('SELECT * FROM reports ORDER BY period_end DESC LIMIT 1').first<ReportRow>();
+/** Most recent report; pass `type` ('weekly'|'monthly') to scope to one kind so
+ * the weekly notification never resolves to a monthly report (or vice-versa). */
+export async function latestReport(env: Env, type?: string): Promise<ReportRow | null> {
+  if (type) {
+    return env.DB.prepare(
+      'SELECT * FROM reports WHERE period_type = ? ORDER BY period_end DESC, created_at DESC LIMIT 1',
+    ).bind(type).first<ReportRow>();
+  }
+  return env.DB.prepare('SELECT * FROM reports ORDER BY period_end DESC, created_at DESC LIMIT 1').first<ReportRow>();
 }
 
 /* ─────────────────────────── Attachments (M6) ─────────────────────────── */

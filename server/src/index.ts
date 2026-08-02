@@ -385,7 +385,10 @@ app.delete('/mandates/:id', async (c) => {
 app.get('/reports', async (c) => c.json({ reports: await listReports(c.env) }));
 
 app.get('/reports/latest', async (c) => {
-  const r = await latestReport(c.env);
+  // ?type=weekly|monthly scopes "latest" to one kind — the weekly notification
+  // must not surface a monthly report just because its period_end is later.
+  const type = c.req.query('type');
+  const r = await latestReport(c.env, type === 'weekly' || type === 'monthly' ? type : undefined);
   if (!r?.html) return c.json({ error: 'no report yet' }, 404);
   return c.html(r.html);
 });
