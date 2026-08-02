@@ -409,6 +409,8 @@ export interface MandateRow {
   merchant_hint: string | null;
   active: number;
   notes: string | null;
+  emi_total: number | null; // tenure (installment count); NULL = open-ended mandate
+  emi_start: string | null; // ISO date of first installment (EMI only)
   created_at: string;
   updated_at: string;
 }
@@ -433,14 +435,16 @@ export async function insertMandate(
     category?: string;
     merchant_hint?: string;
     notes?: string;
+    emi_total?: number | null;
+    emi_start?: string | null;
   },
   now: string,
 ): Promise<MandateRow> {
   const id = crypto.randomUUID();
   await env.DB.prepare(
     `INSERT INTO mandates
-       (id, name, platform, amount, day_of_cycle, frequency, category, merchant_hint, active, notes, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,1,?,?,?)`,
+       (id, name, platform, amount, day_of_cycle, frequency, category, merchant_hint, active, notes, emi_total, emi_start, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,1,?,?,?,?,?)`,
   )
     .bind(
       id,
@@ -452,6 +456,8 @@ export async function insertMandate(
       data.category ?? 'Bills & Utilities',
       data.merchant_hint ?? null,
       data.notes ?? null,
+      data.emi_total ?? null,
+      data.emi_start ?? null,
       now,
       now,
     )
@@ -462,7 +468,7 @@ export async function insertMandate(
 export async function updateMandate(
   env: Env,
   id: string,
-  fields: Partial<Pick<MandateRow, 'name' | 'platform' | 'amount' | 'day_of_cycle' | 'frequency' | 'category' | 'merchant_hint' | 'active' | 'notes'>>,
+  fields: Partial<Pick<MandateRow, 'name' | 'platform' | 'amount' | 'day_of_cycle' | 'frequency' | 'category' | 'merchant_hint' | 'active' | 'notes' | 'emi_total' | 'emi_start'>>,
   now: string,
 ): Promise<MandateRow | null> {
   const existing = await getMandate(env, id);
@@ -480,6 +486,8 @@ export async function updateMandate(
   if (fields.merchant_hint !== undefined) { sets.push('merchant_hint = ?'); binds.push(fields.merchant_hint); }
   if (fields.active !== undefined)        { sets.push('active = ?');        binds.push(fields.active); }
   if (fields.notes !== undefined)         { sets.push('notes = ?');         binds.push(fields.notes); }
+  if (fields.emi_total !== undefined)     { sets.push('emi_total = ?');     binds.push(fields.emi_total); }
+  if (fields.emi_start !== undefined)     { sets.push('emi_start = ?');     binds.push(fields.emi_start); }
 
   if (sets.length === 0) return existing;
 

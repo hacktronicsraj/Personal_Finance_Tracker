@@ -164,6 +164,8 @@ function AppShell() {
           <Stack.Screen name="categories" options={{ title: 'Categories' }} />
           <Stack.Screen name="reports" options={{ title: 'Reports' }} />
           <Stack.Screen name="report/[id]" options={{ title: 'Report' }} />
+          <Stack.Screen name="mandates" options={{ title: 'Mandates & EMIs' }} />
+          <Stack.Screen name="rules" options={{ title: 'Classification rules' }} />
         </Stack>
         {/* Lock overlays — on top of the Stack, tree stays mounted underneath. */}
         {checking && <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#000' }} />}

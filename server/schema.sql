@@ -90,6 +90,8 @@ CREATE TABLE IF NOT EXISTS mandates (
   merchant_hint TEXT,
   active        INTEGER NOT NULL DEFAULT 1,
   notes         TEXT,
+  emi_total     INTEGER,             -- total installments (tenure); NULL = open-ended mandate, not an EMI
+  emi_start     TEXT,                -- ISO date of the first installment (EMI only)
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL
 );

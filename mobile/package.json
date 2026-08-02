@@ -7,7 +7,7 @@
     "start": "expo start --dev-client",
     "android": "expo run:android",
     "prebuild": "expo prebuild -p android --clean",
-    "test": "vitest run src/parse src/txns.test.ts",
+    "test": "vitest run src/parse src/txns.test.ts src/mandates.test.ts",
     "typecheck": "tsc --noEmit",
     "ios": "expo run:ios"
   },

@@ -9,7 +9,7 @@ import { TxnItem } from '../../src/components/TxnItem';
 import { categoryColor, formatNum } from '../../src/config';
 import { monthRange } from '../../src/dates';
 import { useSummary, useTransactions } from '../../src/hooks';
-import { nextDueDate, formatDueDate, platformLabel } from '../../src/mandates';
+import { emiProgress, nextDueDate, formatDueDate, platformLabel } from '../../src/mandates';
 import { Card, Chip, colors, Kicker, Loading, Money, Muted, SectionLabel } from '../../src/ui';
 
 export default function Dashboard() {
@@ -46,7 +46,7 @@ export default function Dashboard() {
     const weekAhead = new Date(today);
     weekAhead.setDate(today.getDate() + 7);
     return (mandatesQ.data ?? [])
-      .filter((m) => m.active)
+      .filter((m) => m.active && !emiProgress(m)?.done) // hide finished EMIs
       .map((m) => ({ mandate: m, due: nextDueDate(m.day_of_cycle, m.frequency) }))
       .filter(({ due }) => due >= today && due <= weekAhead)
       .sort((a, b) => a.due.getTime() - b.due.getTime());
@@ -106,7 +106,7 @@ export default function Dashboard() {
 
         {upcoming.length > 0 && (
           <>
-            <SectionLabel title="Upcoming" action="Mandates →" onAction={() => router.push('/mandates')} />
+            <SectionLabel title="Upcoming" action="Mandates & EMIs →" onAction={() => router.push('/mandates')} />
             <Card style={{ paddingVertical: 6 }}>
               {upcoming.map(({ mandate: m, due }) => (
                 <Pressable

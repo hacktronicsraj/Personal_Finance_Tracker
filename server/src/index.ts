@@ -356,6 +356,8 @@ app.post('/mandates', async (c) => {
     category?: string;
     merchant_hint?: string;
     notes?: string;
+    emi_total?: number | null;
+    emi_start?: string | null;
   };
   if (!body?.name || !body?.platform || typeof body?.amount !== 'number' || typeof body?.day_of_cycle !== 'number') {
     return c.json({ error: 'name, platform, amount, and day_of_cycle are required' }, 400);

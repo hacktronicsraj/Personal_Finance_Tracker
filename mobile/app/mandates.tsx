@@ -9,9 +9,10 @@ import {
   patchMandate,
 } from '../src/api/client';
 import { ConfirmDialog } from '../src/components/ConfirmDialog';
+import { WhenField } from '../src/components/WhenPicker';
 import { formatNum } from '../src/config';
 import { useCategories } from '../src/hooks';
-import { cycleLabel, formatDueDate, formatDueWithDate, nextDueDate, platformLabel, PLATFORMS } from '../src/mandates';
+import { cycleLabel, emiProgress, formatDueDate, formatDueWithDate, nextDueDate, platformLabel, PLATFORMS } from '../src/mandates';
 import { Button, Card, CategoryPill, colors, H2, inputStyle, Loading, Muted, Screen } from '../src/ui';
 
 const FREQUENCIES = ['monthly', 'weekly', 'quarterly', 'yearly'] as const;
@@ -30,18 +31,33 @@ export default function MandatesScreen() {
   const [category, setCategory] = useState<string | null>(null);
   const [merchantHint, setMerchantHint] = useState('');
   const [notes, setNotes] = useState('');
+  // EMI mode
+  const [isEmi, setIsEmi] = useState(false);
+  const [emiTotal, setEmiTotal] = useState('');
+  const [emiStart, setEmiStart] = useState<Date | null>(null);
+
+  const emiValid = !isEmi || (Number(emiTotal) >= 1 && !!emiStart);
+  const canAdd = !!name.trim() && !!amount.trim() && !!category && emiValid;
 
   async function add() {
-    if (!name.trim() || !amount.trim() || !category) return;
+    if (!canAdd) return;
+    // For an EMI the cycle anchor is derived from the first-installment date —
+    // weekday (0–6) for a weekly EMI, day-of-month otherwise, matching how
+    // nextDueDate/cycleLabel interpret day_of_cycle per frequency.
+    const day = isEmi && emiStart
+      ? (frequency === 'weekly' ? emiStart.getDay() : emiStart.getDate())
+      : parseInt(dayOfCycle, 10) || 1;
     await createMandate({
       name: name.trim(),
       amount: parseFloat(amount),
-      day_of_cycle: parseInt(dayOfCycle, 10) || 1,
+      day_of_cycle: day,
       platform,
       frequency,
       category,
       merchant_hint: merchantHint.trim() || null,
       notes: notes.trim() || null,
+      emi_total: isEmi ? Math.max(1, parseInt(emiTotal, 10) || 1) : null,
+      emi_start: isEmi && emiStart ? emiStart.toISOString() : null,
     });
     setName('');
     setAmount('');
@@ -49,6 +65,9 @@ export default function MandatesScreen() {
     setMerchantHint('');
     setNotes('');
     setCategory(null);
+    setIsEmi(false);
+    setEmiTotal('');
+    setEmiStart(null);
     qc.invalidateQueries({ queryKey: ['mandates'] });
   }
 
@@ -78,12 +97,12 @@ export default function MandatesScreen() {
     <Screen>
       {/* ── Add form ── */}
       <Card>
-        <H2>Add mandate</H2>
+        <H2>Add mandate / EMI</H2>
         <View style={{ height: 8 }} />
         <TextInput
           value={name}
           onChangeText={setName}
-          placeholder="Name (e.g. Netflix)"
+          placeholder="Name (e.g. Netflix, Car loan)"
           placeholderTextColor={colors.ghost}
           style={inputStyle}
         />
@@ -92,20 +111,53 @@ export default function MandatesScreen() {
           <TextInput
             value={amount}
             onChangeText={setAmount}
-            placeholder="Amount"
+            placeholder={isEmi ? 'Amount / month' : 'Amount'}
             placeholderTextColor={colors.ghost}
             keyboardType="numeric"
             style={[inputStyle, { flex: 1 }]}
           />
-          <TextInput
-            value={dayOfCycle}
-            onChangeText={setDayOfCycle}
-            placeholder="Day"
-            placeholderTextColor={colors.ghost}
-            keyboardType="numeric"
-            style={[inputStyle, { width: 64 }]}
+          {!isEmi && (
+            <TextInput
+              value={dayOfCycle}
+              onChangeText={setDayOfCycle}
+              placeholder="Day"
+              placeholderTextColor={colors.ghost}
+              keyboardType="numeric"
+              style={[inputStyle, { width: 64 }]}
+            />
+          )}
+        </View>
+
+        {/* EMI toggle */}
+        <View style={styles.emiToggle}>
+          <View style={{ flex: 1, paddingRight: 12 }}>
+            <Text style={styles.emiTitle}>EMI / loan</Text>
+            <Muted style={{ marginTop: 1 }}>Track installments and progress toward payoff.</Muted>
+          </View>
+          <Switch
+            value={isEmi}
+            onValueChange={(v) => { setIsEmi(v); if (v && !emiStart) setEmiStart(new Date()); }}
+            accessibilityLabel="EMI or loan"
+            trackColor={{ false: colors.surface3, true: colors.accentDim }}
+            thumbColor={isEmi ? colors.accent : colors.ghost}
           />
         </View>
+        {isEmi && (
+          <View style={{ gap: 8 }}>
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              <TextInput
+                value={emiTotal}
+                onChangeText={(t) => setEmiTotal(t.replace(/\D/g, '').slice(0, 3))}
+                placeholder="Total installments (e.g. 12)"
+                placeholderTextColor={colors.ghost}
+                keyboardType="number-pad"
+                style={[inputStyle, { flex: 1 }]}
+              />
+            </View>
+            <Text style={styles.emiFieldLabel}>First installment</Text>
+            <WhenField value={emiStart} onChange={setEmiStart} />
+          </View>
+        )}
 
         <View style={{ height: 8 }} />
         <Muted>Platform</Muted>
@@ -171,17 +223,17 @@ export default function MandatesScreen() {
           style={inputStyle}
         />
         <View style={{ height: 10 }} />
-        <Button title="Add Mandate" onPress={add} disabled={!name.trim() || !amount.trim() || !category} />
+        <Button title={isEmi ? 'Add EMI' : 'Add mandate'} onPress={add} disabled={!canAdd} />
       </Card>
 
-      {/* ── Mandate list ── */}
+      {/* ── Mandate / EMI list ── */}
       <Card>
-        <H2>Mandates</H2>
+        <H2>Mandates &amp; EMIs</H2>
         <View style={{ height: 6 }} />
         {isLoading ? (
           <Loading />
         ) : mandates.length === 0 ? (
-          <Muted>No mandates yet. Add one above.</Muted>
+          <Muted>No mandates or EMIs yet. Add one above.</Muted>
         ) : (
           grouped.map((g) => (
             <View key={g.frequency}>
@@ -189,13 +241,20 @@ export default function MandatesScreen() {
                 {g.frequency.charAt(0).toUpperCase() + g.frequency.slice(1)}
               </Text>
               {g.items.map((m) => {
+                const emi = emiProgress(m);
                 const due = nextDueDate(m.day_of_cycle, m.frequency);
                 const isToday = formatDueDate(due) === 'Today';
+                const dimmed = emi?.done || !m.active;
                 return (
                   <View key={m.id} style={styles.row}>
-                    <View style={styles.info}>
+                    <View style={[styles.info, dimmed && { opacity: 0.55 }]}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={styles.mandateName} numberOfLines={1}>{m.name}</Text>
+                        {emi && (
+                          <View style={styles.emiBadge}>
+                            <Text style={styles.emiBadgeText}>EMI</Text>
+                          </View>
+                        )}
                         {!m.active && (
                           <View style={styles.inactiveBadge}>
                             <Text style={styles.inactiveBadgeText}>Inactive</Text>
@@ -211,12 +270,31 @@ export default function MandatesScreen() {
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
                         <Text style={styles.mandateAmount}>₹{formatNum(m.amount)}</Text>
-                        <View style={[styles.dueBadge, isToday && styles.dueBadgeToday]}>
-                          <Text style={[styles.dueBadgeText, isToday && styles.dueBadgeTextToday]}>
-                            {formatDueWithDate(due)}
-                          </Text>
-                        </View>
+                        {emi?.done ? (
+                          <View style={[styles.dueBadge, styles.doneBadge]}>
+                            <Text style={[styles.dueBadgeText, styles.doneBadgeText]}>Completed</Text>
+                          </View>
+                        ) : (
+                          <View style={[styles.dueBadge, isToday && styles.dueBadgeToday]}>
+                            <Text style={[styles.dueBadgeText, isToday && styles.dueBadgeTextToday]}>
+                              {formatDueWithDate(due)}
+                            </Text>
+                          </View>
+                        )}
                       </View>
+                      {emi && (
+                        <View style={{ marginTop: 6 }}>
+                          <View style={styles.emiRow}>
+                            <Text style={styles.emiProgressText}>EMI {emi.paid}/{emi.total}</Text>
+                            <Text style={styles.emiRemainingText}>
+                              {emi.done ? 'Paid off' : `${emi.remaining} left · ₹${formatNum(emi.remaining * m.amount)}`}
+                            </Text>
+                          </View>
+                          <View style={styles.emiBar}>
+                            <View style={[styles.emiFill, { width: `${Math.round((emi.paid / emi.total) * 100)}%` }]} />
+                          </View>
+                        </View>
+                      )}
                     </View>
                     <View style={styles.actions}>
                       <Switch
@@ -229,7 +307,7 @@ export default function MandatesScreen() {
                         onPress={() => setPendingDelete(m)}
                         hitSlop={8}
                         accessibilityRole="button"
-                        accessibilityLabel={`Delete mandate ${m.name}`}
+                        accessibilityLabel={`Delete ${m.name}`}
                         style={({ pressed }) => pressed && { opacity: 0.6 }}
                       >
                         <Text style={styles.deleteText}>Delete</Text>
@@ -245,7 +323,7 @@ export default function MandatesScreen() {
 
       <ConfirmDialog
         visible={!!pendingDelete}
-        title="Delete mandate?"
+        title={emiProgress(pendingDelete ?? ({} as MandateRow)) ? 'Delete EMI?' : 'Delete mandate?'}
         message={
           pendingDelete
             ? `"${pendingDelete.name}" (₹${formatNum(pendingDelete.amount)}, ${pendingDelete.frequency}) will stop being tracked. Past transactions are not affected.`
@@ -275,6 +353,16 @@ const styles = StyleSheet.create({
   },
   optionText: { color: colors.sub, fontSize: 12.5, fontWeight: '600' },
   optionTextSel: { color: colors.bg },
+  emiToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.divider,
+  },
+  emiTitle: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  emiFieldLabel: { color: colors.ghost, fontSize: 11, fontWeight: '700', letterSpacing: 0.6, textTransform: 'uppercase' },
   groupLabel: {
     color: colors.ghost,
     fontSize: 11,
@@ -304,6 +392,20 @@ const styles = StyleSheet.create({
   dueBadgeToday: { backgroundColor: colors.accentDim },
   dueBadgeText: { color: colors.sub, fontSize: 10.5, fontWeight: '600' },
   dueBadgeTextToday: { color: colors.accent },
+  doneBadge: { backgroundColor: colors.accentDim },
+  doneBadgeText: { color: colors.accent },
+  emiBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+    backgroundColor: colors.accentDim,
+  },
+  emiBadgeText: { color: colors.accent, fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  emiRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  emiProgressText: { color: colors.sub, fontSize: 11, fontWeight: '700' },
+  emiRemainingText: { color: colors.ghost, fontSize: 11 },
+  emiBar: { height: 4, borderRadius: 2, backgroundColor: colors.surface2, overflow: 'hidden' },
+  emiFill: { height: '100%', borderRadius: 2, backgroundColor: colors.accent },
   inactiveBadge: {
     paddingHorizontal: 6,
     paddingVertical: 1,

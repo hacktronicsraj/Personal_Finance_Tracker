@@ -73,6 +73,47 @@ export function cycleLabel(dayOfCycle: number, frequency: string): string {
   return `Day ${dayOfCycle}`;
 }
 
+export interface EmiInfo {
+  total: number;
+  paid: number;
+  remaining: number;
+  done: boolean;
+}
+
+/**
+ * Progress of an EMI: how many installments have already come due (inclusive of
+ * today), out of the tenure. Returns null when the mandate isn't an EMI
+ * (emi_total / emi_start not set). Pure.
+ */
+export function emiProgress(
+  m: { emi_total: number | null; emi_start: string | null; frequency: string },
+  now: Date = new Date(),
+): EmiInfo | null {
+  if (!m.emi_total || !m.emi_start) return null;
+  const total = m.emi_total;
+  const start = new Date(m.emi_start);
+  if (isNaN(start.getTime())) return null;
+  const stepMonths = m.frequency === 'quarterly' ? 3 : m.frequency === 'yearly' ? 12 : 1;
+
+  let paid = 0;
+  for (let k = 0; k < total; k++) {
+    let due: Date;
+    if (m.frequency === 'weekly') {
+      due = new Date(start.getTime() + k * 7 * 86400000);
+    } else {
+      // Clamp the anchor day to the target month's length (like nextDueDate) so a
+      // day 29–31 EMI doesn't roll into the next month on short months.
+      const y = start.getFullYear();
+      const mo = start.getMonth() + k * stepMonths;
+      const lastDay = new Date(y, mo + 1, 0).getDate();
+      due = new Date(y, mo, Math.min(start.getDate(), lastDay));
+    }
+    if (due.getTime() <= now.getTime()) paid++;
+    else break;
+  }
+  return { total, paid, remaining: Math.max(0, total - paid), done: paid >= total };
+}
+
 export const PLATFORMS = [
   { value: 'gpay', label: 'Google Pay' },
   { value: 'phonepe', label: 'PhonePe' },

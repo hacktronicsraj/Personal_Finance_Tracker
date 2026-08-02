@@ -194,6 +194,8 @@ export interface MandateRow {
   merchant_hint: string | null;
   active: number;
   notes: string | null;
+  emi_total: number | null; // tenure (installment count); null = open-ended mandate, not an EMI
+  emi_start: string | null; // ISO date of the first installment (EMI only)
   created_at: string;
   updated_at: string;
 }

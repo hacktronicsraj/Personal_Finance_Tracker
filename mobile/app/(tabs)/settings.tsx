@@ -200,7 +200,7 @@ export default function Settings() {
         <View style={{ height: 8 }} />
         <Button title="Classification rules" variant="ghost" onPress={() => router.push('/rules')} />
         <View style={{ height: 8 }} />
-        <Button title="Mandates" variant="ghost" onPress={() => router.push('/mandates')} />
+        <Button title="Mandates & EMIs" variant="ghost" onPress={() => router.push('/mandates')} />
         <View style={{ height: 8 }} />
         <Button title="Reports" variant="ghost" onPress={() => router.push('/reports')} />
       </Card>

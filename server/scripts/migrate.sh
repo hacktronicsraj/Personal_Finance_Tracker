@@ -37,6 +37,8 @@ add_column_if_missing() {
 add_column_if_missing transactions tags       "tags TEXT"
 add_column_if_missing transactions mandate_id "mandate_id TEXT"
 add_column_if_missing reports      period_type "period_type TEXT NOT NULL DEFAULT 'weekly'"
+add_column_if_missing mandates     emi_total   "emi_total INTEGER"
+add_column_if_missing mandates     emi_start   "emi_start TEXT"
 
 # --- Backfill: migrate the old notes-based mandate link into mandate_id -----
 # M2 originally appended `mandate:<id>` to the notes column. The id is a UUID
