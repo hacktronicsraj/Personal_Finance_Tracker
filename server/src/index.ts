@@ -4,6 +4,7 @@ import { isCategory } from './categories';
 import { classifyTxn, extractFromImage } from './llm';
 import { normalizeMerchant } from './classify';
 import { buildCsv } from './csv';
+import { registerClipboardRoutes } from './clipboard';
 import { generateReport, generateWeeklyReport, type ReportPeriod } from './reports';
 import {
   addCategory,
@@ -65,6 +66,9 @@ app.use('*', async (c, next) => {
 const now = () => new Date().toISOString();
 
 app.get('/health', (c) => c.json({ ok: true, mode: c.env.LLM_MODE ?? 'live' }));
+
+// Shared clipboard with the Mac (and any other device).
+registerClipboardRoutes(app);
 
 app.post('/classify', async (c) => {
   const body = (await c.req.json()) as ClassifyRequest;

@@ -119,3 +119,20 @@ CREATE TABLE IF NOT EXISTS reports (
   html         TEXT,
   created_at   TEXT NOT NULL
 );
+
+-- Shared clipboard between devices (text in D1, images/files in R2).
+CREATE TABLE IF NOT EXISTS clipboard_items (
+  id TEXT PRIMARY KEY,
+  owner TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  device_name TEXT,
+  kind TEXT NOT NULL,            -- 'text' | 'image' | 'file'
+  text TEXT,
+  blob_key TEXT,
+  mime TEXT,
+  file_name TEXT,
+  byte_size INTEGER,
+  created_at TEXT NOT NULL,
+  deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_clipboard_owner_created ON clipboard_items(owner, created_at);

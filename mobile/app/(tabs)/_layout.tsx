@@ -47,6 +47,17 @@ function SettingsIcon({ color, focused }: IconProps) {
   );
 }
 
+function ClipboardIcon({ color, focused }: IconProps) {
+  const s = stroke(iconColor(color, focused));
+  return (
+    <Svg width={21} height={21} viewBox="0 0 24 24">
+      <Rect x={5} y={4} width={14} height={17} rx={3} {...s} />
+      <Path d="M9 4.5a3 3 0 0 1 6 0" {...s} />
+      <Path d="M9 11h6M9 15h4" {...s} />
+    </Svg>
+  );
+}
+
 export default function TabsLayout() {
   return (
     <Tabs
@@ -65,6 +76,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: HomeIcon }} />
       <Tabs.Screen name="transactions" options={{ title: 'Activity', tabBarIcon: ActivityIcon }} />
       <Tabs.Screen name="analytics" options={{ title: 'Insights', tabBarIcon: InsightsIcon }} />
+      <Tabs.Screen name="clipboard" options={{ title: 'Clipboard', tabBarIcon: ClipboardIcon }} />
       <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: SettingsIcon }} />
     </Tabs>
   );
