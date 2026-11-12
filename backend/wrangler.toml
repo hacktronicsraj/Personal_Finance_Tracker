@@ -1,0 +1,30 @@
+name = "pft-native"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Fresh backend for the native Kotlin app — separate Worker + D1 from the old
+# React Native stack (`pft`). Same Cloudflare account.
+
+[vars]
+# LLM is optional. With no LLM_API_KEY the classifier falls back to the built-in
+# deterministic rules, so a fresh deploy works before any secret is set.
+# Provider: Google Gemini via its OpenAI-compatible endpoint.
+LLM_MODE = "live"
+LLM_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+LLM_MODEL = "gemini-flash-latest"
+# Fallback model (Workers AI, billed to this account, free daily allocation).
+AI_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct"
+
+# Workers AI binding — fallback behind every LLM call.
+[ai]
+binding = "AI"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pft-native"
+database_id = "0d499f2f-95b8-4b10-9857-e5e7b6282ee7"
+
+# Secrets (set with `wrangler secret put <NAME>`):
+#   API_TOKEN        — bearer token the app sends; required in prod
+#   LLM_API_KEY      — Gemini key (optional; rules fallback otherwise)

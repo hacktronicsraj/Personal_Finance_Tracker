@@ -1,0 +1,5 @@
+# Copy to .dev.vars for local dev (wrangler dev reads it). Never commit .dev.vars.
+API_TOKEN="dev-token"
+LLM_API_KEY=""
+# Password for the browser CSV upload page (GET /upload). Unset = upload disabled.
+UPLOAD_PASSWORD="dev-upload-password"

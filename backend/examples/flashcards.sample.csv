@@ -1,0 +1,6 @@
+question,option1,option2,option3,option4,answer,difficulty
+"What does the KV cache store?","Keys and values for previous tokens","Only the keys","Gradients","Model weights",0,medium
+"What is batch size in inference?","Sequences processed per step","Number of layers","Number of attention heads","Vocabulary size",0,medium
+"Which factor most directly increases KV cache memory?","Longer context length","Larger vocabulary","More training steps","Higher learning rate",0,hard
+"What does a token represent?","A subword unit","A neural layer","A GPU core","A file handle",0,medium
+"Why is prefill compute-bound but decode memory-bound?","Prefill batches many tokens; decode reads weights per token","Prefill uses less memory","Decode has fewer parameters","Prefill skips attention",0,hard
