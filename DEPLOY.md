@@ -197,8 +197,10 @@ npx wrangler d1 execute pft --remote \
 |---|---|
 | Backend code / prompt / rules | `cd server && npm run deploy` |
 | Switch LLM provider/model | edit `[vars]` in `wrangler.toml`, `npx wrangler secret put LLM_API_KEY`, redeploy |
-| App code / screens | rebuild the APK (step 2) and install over the old one |
-| DB schema change | add SQL to `schema.sql` (it's idempotent), `npm run db:init:remote` |
+| App JS / screens / parser | `cd mobile && npm run ota "what changed"` — lands on the phone, no cable |
+| App native side (new module, permission, config plugin) | rebuild the APK (step 2) |
+| DB schema change | add SQL to `schema.sql` (it's idempotent), then `npm run db:migrate` |
+| Retrain the classifier from history | `cd server && node scripts/train.mjs` to preview, `--apply` to write |
 
 ### Upgrading to the share + reliability version
 
@@ -208,6 +210,50 @@ npx wrangler d1 execute pft --remote \
    then rebuild with a clean prebuild so the share-sheet target is registered:
    `npx expo run:android --variant release` (Path B) or `eas build` (Path A).
    Reading Google Pay screenshots reuses your existing `LLM_API_KEY` — no extra config.
+
+### Over-the-air updates (EAS Update)
+
+JS and asset changes ship straight to the phone — no cable, no reinstall. Native
+changes cannot: a new native module, an Android permission, or an edit to the
+`withSmsReceiver` / `withSpendWidget` plugins still needs a rebuilt APK. The
+`fingerprint` runtime-version policy enforces this automatically — a build only
+receives updates whose native fingerprint matches, so a JS bundle can never land
+on an APK that lacks the native code it calls.
+
+Cost: EAS Update's free tier covers well beyond a single-user app.
+
+**One-time setup** (interactive — run these yourself):
+
+```bash
+cd mobile
+npx eas login                 # or: npx eas-cli@latest login
+npx eas init                  # creates the EAS project, writes extra.eas.projectId
+npx eas update:configure      # writes the updates.url into app.config.ts
+```
+
+Then rebuild the APK **once** so it contains the updates runtime and channel:
+
+```bash
+npm run build:apk             # production profile → channel "production"
+```
+
+Install that APK. From then on:
+
+```bash
+npm run ota "fix airtel bill reminders"      # → production channel
+npm run ota:preview "trying something"        # → preview channel
+```
+
+The app checks on launch and downloads in the background; it applies on the next
+start. To pull one immediately: **Settings → App updates → Check for updates**,
+then *Restart to apply*.
+
+**Rollback** — republish a known-good bundle to the branch:
+
+```bash
+npx eas update:list --branch production      # find the update you want
+npx eas update:republish --group <id>
+```
 
 ---
 
@@ -252,3 +298,78 @@ npx wrangler d1 execute pft --remote \
 - **Cloudflare Workers/D1:** ₹0 (free tier: 100k requests/day, 5 GB — you'll use <1%).
 - **LLM:** ₹0 on Groq/Gemini free tiers; ~₹0.01/transaction on gpt-4o-mini.
 - **EAS builds:** free tier quota, or ₹0 forever with local builds (Path B).
+
+---
+
+## 7. Personal-assistant features (Phase 6)
+
+The app is now more than a finance tracker. Three assistant features were added.
+All of the AI runs on the backend; if it's ever unreachable the app **retries 3×
+and then lets you through** — you're never locked out by an outage.
+
+### 7.1 Classifier: Jev (TypeSafe) instead of Gemini
+
+Transactions are now categorised by **Jev**, TypeSafe's decision model — it returns
+one of your categories with a calibrated confidence in ~100–400 ms and cannot
+hallucinate a category. On this account's own 120 labelled transactions Jev matched
+Gemini's accuracy while being ~12× faster and far cheaper.
+
+- Secret: `wrangler secret put TYPESAFE_API_KEY` (already set in prod).
+- `wrangler.toml`: `CLASSIFIER = "jev"` (options: `jev` → Jev, LLM only on error;
+  `hybrid` → also ask the LLM when Jev's confidence < 0.5; `llm` → old behaviour).
+- **Fallback LLM is now Cloudflare Workers AI** (`[ai]` binding, `AI_MODEL =
+  @cf/meta/llama-4-scout-17b-16e-instruct`) — text **and** vision — so the app no
+  longer depends on the (now credit-exhausted) Gemini key. `LLM_*` is still tried
+  first if it has credit.
+
+### 7.2 Weekly bank-statement reconciliation
+
+Share a bank-statement **PDF** to the app (share sheet → Finance Tracker) or
+Settings → **Bank statements** → Upload. The PDF text is extracted **on the phone**
+(PDFBox; password-protected statements are unlocked locally — you're prompted for
+the password, only the text is uploaded). The backend matches every line against
+your ledger and shows: **missing** rows to add, **ghost** rows to remove (manual/cash
+entries default to *keep*), and what already matches — nothing changes until you
+approve each item. Re-uploading the same statement is idempotent.
+
+- Reminder: a local notification fires **Friday 20:00 IST**, then every 8 h until you
+  upload that week's statement.
+
+### 7.3 Daily learning check-in + Instagram guard
+
+- **10:30 PM IST** a notification asks what you learned (topic: inference
+  engineering). The check-in must be ≥15 real words and a genuine update (or an
+  honest "couldn't study") — validated locally, then by Jev. After it's accepted the
+  coach replies with a follow-up question.
+- **Instagram guard** (Settings → *Focus & Instagram guard*) — needs three
+  one-time grants:
+  1. **Accessibility service** — lets the app notice Instagram opening. Settings →
+     Accessibility → Finance Tracker → On.
+  2. **Usage access** — for the "you've used Instagram N min today" line.
+  3. **Uninstall protection** (device admin) — makes the app undeletable from the
+     phone UI.
+- Rules: **2 keys/day** (a key is spent when you leave Instagram); the **first open
+  each day needs a photo of the folded green blanket** (camera only); after 22:30
+  Instagram is **locked until the day's check-in is done**.
+
+> The accessibility service and device-admin need a fresh APK (native code) — they
+> can't ship over the air. Rebuild + reinstall (Path B in §2) after upgrading.
+
+### 7.4 Removing the app (uninstall protection is on)
+
+Once device-admin uninstall protection is enabled, the phone UI won't let you
+uninstall. Remove it over USB:
+
+```bash
+adb shell dpm remove-active-admin com.personal.financetracker/.FocusAdminReceiver
+adb uninstall com.personal.financetracker
+```
+
+### 7.5 Server migration for these features
+
+The new tables (`learning_checkins`, `assistant_messages`, `focus_events`,
+`statements`, `statement_items`) are created by the idempotent migration:
+
+```bash
+cd server && npm run db:migrate        # remote (prod)
+```

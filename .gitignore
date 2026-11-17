@@ -12,3 +12,4 @@ android/
 ios/
 .DS_Store
 coverage/
+.bench-results.json
