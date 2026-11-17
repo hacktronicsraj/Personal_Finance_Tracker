@@ -44,6 +44,14 @@ add_column_if_missing flashcards interval_days "interval_days REAL NOT NULL DEFA
 add_column_if_missing flashcards reps          "reps INTEGER NOT NULL DEFAULT 0"
 add_column_if_missing flashcards due_at        "due_at TEXT"
 
+# --- Flashcards: sibling groups + new-card cap ----------------------------
+add_column_if_missing flashcards grp           "grp TEXT"
+add_column_if_missing flashcards introduced_at "introduced_at TEXT"
+add_column_if_missing flashcards new_order     "new_order INTEGER"
+# Cards already reviewed were introduced long ago — don't count them as new today.
+exec_sql "UPDATE flashcards SET introduced_at = created_at
+          WHERE introduced_at IS NULL AND (times_shown > 0 OR due_at IS NOT NULL)" >/dev/null
+
 exec_sql "CREATE INDEX IF NOT EXISTS idx_flashcards_deck ON flashcards (deck, suspended)" >/dev/null
 exec_sql "CREATE INDEX IF NOT EXISTS idx_flashcards_last ON flashcards (last_shown_at)" >/dev/null
 exec_sql "CREATE INDEX IF NOT EXISTS idx_flashcards_hash ON flashcards (content_hash)" >/dev/null

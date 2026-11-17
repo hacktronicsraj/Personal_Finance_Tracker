@@ -1,6 +1,8 @@
 export interface Env {
   DB: D1Database;
   AI?: Ai;
+  /** R2 bucket for clipboard images/files. Text clipboard works without it. */
+  CLIPBOARD?: R2Bucket;
   API_TOKEN?: string;
   /** Password for the browser upload page (POST /upload/bulk). Unset = disabled. */
   UPLOAD_PASSWORD?: string;

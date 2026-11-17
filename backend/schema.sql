@@ -112,6 +112,9 @@ CREATE TABLE IF NOT EXISTS flashcards (
   interval_days REAL    NOT NULL DEFAULT 0,     -- current gap between reviews
   reps          INTEGER NOT NULL DEFAULT 0,     -- consecutive correct reviews
   due_at        TEXT,                           -- when the card is next due
+  grp           TEXT,                           -- sibling group (e.g. 'geo:FR'): never quizzed together
+  introduced_at TEXT,                           -- first graded — counts against the new-cards/day cap
+  new_order     INTEGER,                        -- introduction order within the deck (geography: nearest to India first)
   suspended     INTEGER NOT NULL DEFAULT 0,  -- 1 = keep in the library, never quiz it
   created_at    TEXT NOT NULL
 );
@@ -174,3 +177,33 @@ CREATE TABLE IF NOT EXISTS statement_items (
   created_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_stmt_items_stmt ON statement_items (statement_id);
+
+-- Shared clipboard between the Mac (Dr Watson) and the phone. Text lives here;
+-- images/files live in the CLIPBOARD R2 bucket under blob_key. 7-day retention.
+CREATE TABLE IF NOT EXISTS clipboard_items (
+  id          TEXT PRIMARY KEY,
+  owner       TEXT NOT NULL,
+  device_id   TEXT NOT NULL,
+  device_name TEXT,
+  kind        TEXT NOT NULL,            -- text | image | file
+  text        TEXT,
+  blob_key    TEXT,
+  mime        TEXT,
+  file_name   TEXT,
+  byte_size   INTEGER,
+  created_at  TEXT NOT NULL,
+  deleted_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_clipboard_owner_created ON clipboard_items (owner, created_at);
+
+-- App usage sessions uploaded by the phone (Android keeps raw events ~1 week).
+-- id = '<pkg>:<start_ms>'; a session still open at upload is extended later.
+CREATE TABLE IF NOT EXISTS app_sessions (
+  id         TEXT PRIMARY KEY,
+  pkg        TEXT NOT NULL,
+  start_ms   INTEGER NOT NULL,
+  end_ms     INTEGER NOT NULL,
+  day        TEXT NOT NULL,          -- IST day the session started
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_app_sessions_pkg_start ON app_sessions (pkg, start_ms);

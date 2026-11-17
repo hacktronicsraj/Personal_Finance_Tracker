@@ -28,11 +28,26 @@ describe('reviewCard (SM-2)', () => {
     expect(r.interval_days).toBeLessThan(17);
   });
 
-  it('resets reps and interval to 1 day on a wrong answer', () => {
+  it('resets reps and brings a missed card back in 10 minutes', () => {
     const r = reviewCard({ ease: 2.5, interval_days: 30, reps: 5 }, false, now);
     expect(r.reps).toBe(0);
+    expect(r.interval_days).toBe(0);
+    expect(Date.parse(r.due_at) - now).toBe(10 * 60_000);
+  });
+
+  it('graduates a relearned card to 1 day', () => {
+    const r = reviewCard({ ease: 2.2, interval_days: 0, reps: 0 }, true, now);
     expect(r.interval_days).toBe(1);
-    expect(days(r)).toBe(1);
+  });
+
+  it('fuzzes long intervals by at most 5%', () => {
+    const base = reviewCard({ ease: 2.5, interval_days: 40, reps: 4 }, true, now).interval_days;
+    const hi = reviewCard({ ease: 2.5, interval_days: 40, reps: 4 }, true, now, 1).interval_days;
+    const lo = reviewCard({ ease: 2.5, interval_days: 40, reps: 4 }, true, now, -1).interval_days;
+    expect(hi).toBeGreaterThan(base);
+    expect(lo).toBeLessThan(base);
+    expect(hi).toBeLessThanOrEqual(Math.round(base * 1.05) + 1);
+    expect(lo).toBeGreaterThanOrEqual(Math.round(base * 0.95) - 1);
   });
 
   it('lowers ease on a wrong answer', () => {

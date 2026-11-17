@@ -1,6 +1,8 @@
 import { uid } from './db';
 import type { Flashcard } from './flashcards';
 import type { Env } from './types';
+import { selectQuiz } from './srs';
+import { istDay, istMidnightUtc } from './ist';
 
 export interface FlashcardRow {
   id: string;
@@ -18,6 +20,9 @@ export interface FlashcardRow {
   interval_days: number;
   reps: number;
   due_at: string | null;
+  grp: string | null;
+  introduced_at: string | null;
+  new_order: number | null;
   suspended: number;
   created_at: string;
 }
@@ -157,55 +162,34 @@ export async function listDecks(env: Env): Promise<{ deck: string; count: number
   return res.results ?? [];
 }
 
-/**
- * N cards for a quiz, spaced-repetition aware.
- *
- * Selection order:
- *  1. Deck priority — cards from any deck OTHER than 'default' come first, so
- *     a subject you're actively studying outranks the catch-all deck. Default
- *     cards only surface once the priority decks are exhausted.
- *  2. Due first — cards whose due_at has passed (or is unset) before cards not
- *     yet due.
- *  3. Least recently shown, then random, to break ties without repeating.
- *
- * A deck small enough to run out of due cards still fills the quiz by falling
- * through to cards that aren't due yet — better to show a card early than to
- * hand the gate an empty set.
- */
+/** Hours a card stays out of rotation (kept for API compatibility; selection is in srs.ts). */
 export const SPACING_HOURS = 24;
 
+/**
+ * N cards for a gate checkpoint, spaced-repetition aware — see selectQuiz() in
+ * srs.ts for the order. Loads every active card (a few hundred rows) and picks
+ * in memory, so the policy stays testable.
+ */
 export async function pickQuiz(
   env: Env,
   n: number,
   opts: { deck?: string | null; spacingHours?: number; exclude?: string[] } = {},
 ): Promise<FlashcardRow[]> {
-  const hours = opts.spacingHours ?? SPACING_HOURS;
-  const cutoff = new Date(Date.now() - hours * 3600_000).toISOString();
-  const nowIsoStr = new Date().toISOString();
   const where: string[] = ['suspended = 0'];
   const binds: unknown[] = [];
   if (opts.deck) {
     where.push('deck = ?');
     binds.push(opts.deck);
   }
-  if (opts.exclude?.length) {
-    where.push(`id NOT IN (${opts.exclude.map(() => '?').join(',')})`);
-    binds.push(...opts.exclude);
-  }
-  const sql = `SELECT * FROM flashcards
-               WHERE ${where.join(' AND ')}
-               ORDER BY
-                 CASE WHEN deck = 'default' THEN 1 ELSE 0 END,
-                 CASE WHEN due_at IS NULL OR due_at <= ? THEN 0 ELSE 1 END,
-                 CASE WHEN last_shown_at IS NULL OR last_shown_at < ? THEN 0 ELSE 1 END,
-                 COALESCE(due_at, '') ASC,
-                 times_shown ASC,
-                 RANDOM()
-               LIMIT ?`;
-  const res = await env.DB.prepare(sql)
-    .bind(...binds, nowIsoStr, cutoff, Math.max(1, n))
+  const res = await env.DB.prepare(`SELECT * FROM flashcards WHERE ${where.join(' AND ')}`)
+    .bind(...binds)
     .all<FlashcardRow>();
-  return res.results ?? [];
+  const exclude = new Set(opts.exclude ?? []);
+  const cards = (res.results ?? []).filter((c) => !exclude.has(c.id));
+  const nowMs = Date.now();
+  const dayStart = new Date(istMidnightUtc(istDay(nowMs))).toISOString();
+  const introducedToday = cards.filter((c) => c.introduced_at && c.introduced_at >= dayStart).length;
+  return selectQuiz(cards, Math.max(1, n), { nowMs, introducedToday });
 }
 
 export async function getFlashcards(env: Env, ids: string[]): Promise<FlashcardRow[]> {
@@ -243,25 +227,37 @@ export interface ReviewOutcome {
   due_at: string;
 }
 
+/** A missed card comes back this soon — the relearning step (Anki's default is 10 min). */
+export const RELEARN_MINUTES = 10;
+
 export function reviewCard(
   card: { ease: number; interval_days: number; reps: number },
   correct: boolean,
   nowMs = Date.now(),
+  /** Random spread for long intervals (±5%), so cards learned together don't
+   *  all fall due on the same day. Pass a value in [-1, 1]; 0 = none. */
+  fuzz = 0,
 ): ReviewOutcome {
   const quality = correct ? 5 : 2;
   const ease = Math.max(1.3, card.ease + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)));
 
-  let reps = card.reps;
-  let interval: number;
   if (!correct) {
-    reps = 0;
-    interval = 1;
-  } else {
-    reps = card.reps + 1;
-    if (reps === 1) interval = 1;
-    else if (reps === 2) interval = 6;
-    else interval = Math.round(card.interval_days * ease);
+    // Lapse: back to the start, re-tested at the next checkpoint (~10 min),
+    // then 1 day once it's right again.
+    return {
+      ease: Number(ease.toFixed(3)),
+      interval_days: 0,
+      reps: 0,
+      due_at: new Date(nowMs + RELEARN_MINUTES * 60_000).toISOString(),
+    };
   }
+
+  const reps = card.reps + 1;
+  let interval: number;
+  if (reps === 1) interval = 1;
+  else if (reps === 2) interval = 6;
+  else interval = Math.round(Math.max(card.interval_days, 1) * ease);
+  if (interval >= 3 && fuzz) interval = Math.max(1, Math.round(interval * (1 + 0.05 * fuzz)));
 
   const dueAt = new Date(nowMs + interval * 86_400_000).toISOString();
   return { ease: Number(ease.toFixed(3)), interval_days: interval, reps, due_at: dueAt };
@@ -272,6 +268,9 @@ export async function recordQuizResults(
   results: { id: string; correct: boolean }[],
   day: string | null = null,
   checkpoint: number | null = null,
+  /** A re-ask of cards missed moments ago in the same checkpoint (the answer was
+   *  just shown). It's practice, not a review: the schedule set by the miss stands. */
+  retry = false,
 ): Promise<void> {
   if (!results.length) return;
   const ts = nowIso();
@@ -283,6 +282,19 @@ export async function recordQuizResults(
 
   const stmts = results.map((r) => {
     const card = byId.get(r.id);
+    const dueMs = card?.due_at ? Date.parse(card.due_at) : null;
+    // Seen before it was due and got it right: an early look says little about
+    // memory, so don't let it stretch the interval. A miss still counts.
+    const early = dueMs != null && dueMs > nowMs && r.correct;
+    if (retry || early) {
+      return env.DB.prepare(
+        `UPDATE flashcards
+            SET times_shown = times_shown + 1,
+                times_correct = times_correct + ?,
+                last_shown_at = ?
+          WHERE id = ?`,
+      ).bind(r.correct ? 1 : 0, ts, r.id);
+    }
     const next = reviewCard(
       {
         ease: card?.ease ?? 2.5,
@@ -291,16 +303,19 @@ export async function recordQuizResults(
       },
       r.correct,
       nowMs,
+      Math.random() * 2 - 1,
     );
     return env.DB.prepare(
       `UPDATE flashcards
           SET times_shown = times_shown + 1,
               times_correct = times_correct + ?,
               last_shown_at = ?,
+              introduced_at = COALESCE(introduced_at, ?),
               ease = ?, interval_days = ?, reps = ?, due_at = ?
         WHERE id = ?`,
     ).bind(
       r.correct ? 1 : 0,
+      ts,
       ts,
       next.ease,
       next.interval_days,

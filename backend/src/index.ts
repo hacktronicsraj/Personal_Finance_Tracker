@@ -6,6 +6,8 @@ import {
 } from './assistantDb';
 import { parseFlashcardCsv } from './csvParse';
 import { uploadPage } from './uploadPage';
+import { registerClipboardRoutes } from './clipboard';
+import { registerUsageRoutes } from './usage';
 import { isIgnoredPayee, ruleClassify } from './classify';
 import {
   analyticsSummary, clearAlias, createCategory, deleteTransaction, getTransaction,
@@ -310,7 +312,7 @@ app.get('/flashcards/quiz', async (c) => {
  * misses until a round comes back fully correct.
  */
 app.post('/flashcards/grade', async (c) => {
-  const body = await c.req.json<{ answers?: Record<string, number>; checkpoint?: number; deck?: string }>();
+  const body = await c.req.json<{ answers?: Record<string, number>; checkpoint?: number; deck?: string; retry?: boolean }>();
   const answers = body.answers ?? {};
   const ids = Object.keys(answers);
   if (!ids.length) return c.json({ error: 'answers required' }, 400);
@@ -319,7 +321,7 @@ app.post('/flashcards/grade', async (c) => {
   // Only log attempts when the caller says which checkpoint this belongs to —
   // a stray quiz from the library screen shouldn't skew the daily stats.
   const checkpoint = Number.isInteger(body.checkpoint) ? body.checkpoint : null;
-  await recordQuizResults(c.env, results, checkpoint != null ? istDay(Date.now()) : null, checkpoint);
+  await recordQuizResults(c.env, results, checkpoint != null ? istDay(Date.now()) : null, checkpoint, body.retry === true);
   const correct = results.filter((r) => r.correct).length;
   return c.json({
     passed: correct === cards.length && cards.length > 0,
@@ -463,6 +465,11 @@ app.post('/statements/:id/apply', async (c) => {
   const result = await applyStatement(c.env, c.req.param('id'), body.decisions ?? {});
   return c.json(result);
 });
+
+/* ─────────────────────── Shared clipboard (Mac ↔ phone) ─────────────────────── */
+
+registerClipboardRoutes(app);
+registerUsageRoutes(app);
 
 app.notFound((c) => c.json({ error: 'not found' }, 404));
 app.onError((err, c) => {

@@ -28,3 +28,8 @@ database_id = "0d499f2f-95b8-4b10-9857-e5e7b6282ee7"
 # Secrets (set with `wrangler secret put <NAME>`):
 #   API_TOKEN        — bearer token the app sends; required in prod
 #   LLM_API_KEY      — Gemini key (optional; rules fallback otherwise)
+
+# Shared clipboard images/files (text lives in D1).
+[[r2_buckets]]
+binding = "CLIPBOARD"
+bucket_name = "pft-native-clipboard"
