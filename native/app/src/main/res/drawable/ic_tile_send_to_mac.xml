@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Laptop with an up arrow: "send to Mac". Tiles tint this; colour is ignored. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M4,5h16a1,1 0,0 1,1 1v10H3V6a1,1 0,0 1,1 -1zM5,7v7h14V7H5zM1,17h22v1.5a1.5,1.5 0,0 1,-1.5 1.5h-19A1.5,1.5 0,0 1,1 18.5V17z" />
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M12,8l3,3h-2v2h-2v-2H9z" />
+</vector>
