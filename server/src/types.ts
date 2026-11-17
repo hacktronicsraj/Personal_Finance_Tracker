@@ -49,4 +49,13 @@ export interface Env {
   LLM_MODEL?: string;
   LLM_API_KEY?: string;
   LLM_REPORT_MODEL?: string; // M7 — weekly digest model (defaults to a strong free-tier model)
+  // TypeSafe Jev decision model (classification + check-in validation).
+  TYPESAFE_API_KEY?: string;
+  JEV_MODEL?: string; // default 'jev-latest'
+  // Which engine categorises transactions: 'jev' (default — Jev, LLM only if Jev
+  // errors) | 'hybrid' (also ask the LLM when Jev's confidence < 0.5) | 'llm'.
+  CLASSIFIER?: string;
+  // Workers AI — fallback LLM (text + vision) when the primary provider fails.
+  AI?: Ai;
+  AI_MODEL?: string;
 }

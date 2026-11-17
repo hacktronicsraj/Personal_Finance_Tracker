@@ -7,6 +7,7 @@ export const CATEGORIES = [
   'Entertainment',
   'Health',
   'Transfers',
+  'Card Payment',
   'Income',
   'Other',
 ] as const;
@@ -28,6 +29,9 @@ export const CATEGORY_META: Record<Category, { color: string; light: string; ico
   Entertainment: { color: '#F472B6', light: '#f9a8d4', icon: '🎬' },
   Health: { color: '#34D399', light: '#6ee7b7', icon: '💊' },
   Transfers: { color: '#94A3B8', light: '#c8ccd8', icon: '🔁' },
+  // Settlement of a card bill — excluded from spend totals server-side, so it is
+  // deliberately muted in the UI too.
+  'Card Payment': { color: '#A1A1AA', light: '#d4d4d8', icon: '💳' },
   Income: { color: '#34D399', light: '#86efac', icon: '💰' },
   Other: { color: '#71717A', light: '#aab1c2', icon: '❓' },
 };

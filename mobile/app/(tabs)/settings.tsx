@@ -12,6 +12,7 @@ import { hasAutostartControls, openBatteryOptimization, openAutostartSettings } 
 import { pullSync } from '../../src/sms/ingest';
 import { requestSmsPermission, smsSupported } from '../../src/sms/reader';
 import { getSettings, saveConnection } from '../../src/settings';
+import { applyUpdate, checkForUpdate, currentUpdateInfo } from '../../src/updates';
 import { Button, Card, colors, H2, inputStyle, Muted, Screen } from '../../src/ui';
 
 export default function Settings() {
@@ -24,6 +25,22 @@ export default function Settings() {
   const [lockOn, setLockOn] = useState(false);
   const [pinSet, setPinSet] = useState(false);
   const [pinModal, setPinModal] = useState(false);
+  const [updateInfo] = useState(currentUpdateInfo);
+  const [otaStatus, setOtaStatus] = useState('');
+  const [otaBusy, setOtaBusy] = useState(false);
+  const [otaReady, setOtaReady] = useState(false);
+
+  async function runUpdateCheck() {
+    setOtaBusy(true);
+    setOtaStatus('');
+    const { available, error } = await checkForUpdate();
+    setOtaBusy(false);
+    if (error) setOtaStatus(error);
+    else if (available) {
+      setOtaReady(true);
+      setOtaStatus('Update downloaded — restart to apply.');
+    } else setOtaStatus('Already up to date.');
+  }
   const [pinDraft, setPinDraft] = useState('');
   const [exporting, setExporting] = useState(false);
 
@@ -203,6 +220,37 @@ export default function Settings() {
         <Button title="Mandates & EMIs" variant="ghost" onPress={() => router.push('/mandates')} />
         <View style={{ height: 8 }} />
         <Button title="Reports" variant="ghost" onPress={() => router.push('/reports')} />
+        <View style={{ height: 8 }} />
+        <Button title="Bank statements" variant="ghost" onPress={() => router.push('/statements')} />
+      </Card>
+
+      <Card>
+        <H2>Personal assistant</H2>
+        <View style={{ height: 6 }} />
+        <Muted>
+          Daily learning check-in, and Instagram limits (two keys a day, the morning folded-blanket photo, and the
+          nightly check-in lock).
+        </Muted>
+        <View style={{ height: 10 }} />
+        <Button title="Focus & Instagram guard" onPress={() => router.push('/focus')} />
+        <View style={{ height: 8 }} />
+        <Button title="Today’s learning check-in" variant="ghost" onPress={() => router.push('/learning')} />
+      </Card>
+
+      <Card>
+        <H2>App updates</H2>
+        <Muted style={{ marginTop: 4 }}>
+          {updateInfo.enabled
+            ? `Running bundle ${updateInfo.currentId}${updateInfo.channel ? ` · ${updateInfo.channel}` : ''}`
+            : 'Over-the-air updates are off in this build.'}
+        </Muted>
+        {!!otaStatus && <Muted style={{ marginTop: 4 }}>{otaStatus}</Muted>}
+        <View style={{ height: 10 }} />
+        <Button
+          title={otaBusy ? 'Checking…' : otaReady ? 'Restart to apply update' : 'Check for updates'}
+          variant="ghost"
+          onPress={otaReady ? applyUpdate : runUpdateCheck}
+        />
       </Card>
 
       <Card>

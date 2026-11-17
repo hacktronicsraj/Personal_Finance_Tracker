@@ -5,8 +5,10 @@ import {
   createMandate,
   deleteMandate,
   fetchMandates,
+  fetchRecurringSuggestions,
   MandateRow,
   patchMandate,
+  RecurringSuggestion,
 } from '../src/api/client';
 import { ConfirmDialog } from '../src/components/ConfirmDialog';
 import { WhenField } from '../src/components/WhenPicker';
@@ -20,6 +22,27 @@ const FREQUENCIES = ['monthly', 'weekly', 'quarterly', 'yearly'] as const;
 export default function MandatesScreen() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ['mandates'], queryFn: fetchMandates });
+  const suggestionsQ = useQuery<RecurringSuggestion[]>({
+    queryKey: ['mandate-suggestions'],
+    queryFn: fetchRecurringSuggestions,
+    staleTime: 10 * 60 * 1000,
+  });
+  const [dismissed, setDismissed] = useState<string[]>([]);
+
+  // Track a detected charge as a mandate, pre-filled from what was observed.
+  async function acceptSuggestion(sg: RecurringSuggestion) {
+    await createMandate({
+      name: sg.merchant,
+      platform: 'bank_autopay',
+      amount: sg.amount,
+      day_of_cycle: sg.dayOfCycle,
+      frequency: sg.frequency,
+      category: sg.category,
+      merchant_hint: sg.merchant,
+    } as any);
+    qc.invalidateQueries({ queryKey: ['mandates'] });
+    qc.invalidateQueries({ queryKey: ['mandate-suggestions'] });
+  }
   const categories = useCategories();
 
   // ── form state ──
@@ -93,8 +116,47 @@ export default function MandatesScreen() {
     items: mandates.filter((m) => m.frequency === f),
   })).filter((g) => g.items.length > 0);
 
+  const suggestions = (suggestionsQ.data ?? []).filter((s) => !dismissed.includes(s.pattern));
+
   return (
     <Screen>
+      {/* ── Detected recurring charges not yet tracked ── */}
+      {suggestions.length > 0 && (
+        <Card>
+          <H2>Looks recurring</H2>
+          <Muted style={{ marginTop: 4 }}>
+            Charges that repeat on a cycle but aren't tracked yet.
+          </Muted>
+          {suggestions.map((sg) => (
+            <View key={sg.pattern} style={styles.sgRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sgName} numberOfLines={1}>{sg.merchant}</Text>
+                <Text style={styles.sgSub}>
+                  ₹{formatNum(sg.amount)} · {sg.frequency === 'weekly' ? 'weekly' : `monthly on the ${sg.dayOfCycle}`}
+                  {' · '}seen {sg.occurrences}×
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => acceptSuggestion(sg)}
+                accessibilityRole="button"
+                accessibilityLabel={`Track ${sg.merchant}`}
+                style={({ pressed }) => [styles.sgTrack, pressed && { opacity: 0.6 }]}
+              >
+                <Text style={styles.sgTrackText}>Track</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setDismissed((d) => [...d, sg.pattern])}
+                accessibilityRole="button"
+                accessibilityLabel={`Dismiss ${sg.merchant}`}
+                style={({ pressed }) => [styles.sgSkip, pressed && { opacity: 0.6 }]}
+              >
+                <Text style={styles.sgSkipText}>✕</Text>
+              </Pressable>
+            </View>
+          ))}
+        </Card>
+      )}
+
       {/* ── Add form ── */}
       <Card>
         <H2>Add mandate / EMI</H2>
@@ -338,6 +400,16 @@ export default function MandatesScreen() {
 }
 
 const styles = StyleSheet.create({
+  sgRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
+  sgName: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  sgSub: { color: colors.sub, fontSize: 12, marginTop: 2 },
+  sgTrack: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
+    backgroundColor: colors.accentDim, borderWidth: 1, borderColor: colors.accentLine,
+  },
+  sgTrackText: { color: colors.accent, fontSize: 13, fontWeight: '600' },
+  sgSkip: { paddingHorizontal: 8, paddingVertical: 6 },
+  sgSkipText: { color: colors.ghost, fontSize: 14 },
   pills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 4 },
   optionPill: {
     paddingVertical: 8,

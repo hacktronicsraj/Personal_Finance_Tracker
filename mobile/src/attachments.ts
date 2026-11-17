@@ -2,6 +2,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
+import { PermissionsAndroid, Platform } from 'react-native';
 
 export interface PickedFile {
   base64: string;
@@ -31,9 +32,25 @@ export async function pickImageFromLibrary(): Promise<PickedFile | null> {
 }
 
 export async function pickImageFromCamera(): Promise<PickedFile | null> {
-  const perm = await ImagePicker.requestCameraPermissionsAsync();
-  if (!perm.granted) return null;
-  const res = await ImagePicker.launchCameraAsync({ quality: 1 });
+  // expo-image-picker's requestCameraPermissionsAsync() can hang indefinitely on
+  // Android (its permission-result callback never fires), which is what left the
+  // blanket / receipt capture stuck on "Working…". Use React Native's core
+  // PermissionsAndroid — it resolves reliably — then launch the camera.
+  if (Platform.OS === 'android') {
+    const already = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
+    if (!already) {
+      const r = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA, {
+        title: 'Camera access',
+        message: 'Finance Tracker needs the camera to take the photo.',
+        buttonPositive: 'Allow',
+      });
+      if (r !== PermissionsAndroid.RESULTS.GRANTED) return null;
+    }
+  } else {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) return null;
+  }
+  const res = await ImagePicker.launchCameraAsync({ quality: 0.7 });
   if (res.canceled || !res.assets?.[0]?.uri) return null;
   return compressImage(res.assets[0].uri);
 }

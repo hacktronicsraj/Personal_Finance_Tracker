@@ -9,6 +9,18 @@ const config: ExpoConfig = {
   slug: 'pft-mobile',
   scheme: 'pft',
   version: '0.1.0',
+  // OTA updates (EAS Update). JS/asset changes ship over the air; anything that
+  // touches native code (a new module, a permission, the config plugins below)
+  // still needs a fresh APK. The 'fingerprint' policy computes a hash of the
+  // native project, so an update is only offered to a build whose native side
+  // actually matches — a JS bundle can never land on an APK that lacks the
+  // native code it needs.
+  runtimeVersion: { policy: 'fingerprint' },
+  updates: {
+    // Check on launch; fall back to the bundled JS if the network is slow.
+    fallbackToCacheTimeout: 5000,
+    checkAutomatically: 'ON_LOAD',
+  },
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
   icon: './assets/icon.png',
@@ -32,6 +44,10 @@ const config: ExpoConfig = {
       'android.permission.CAMERA',
       // Biometric app lock (M5).
       'android.permission.USE_BIOMETRIC',
+      // Focus Guard: read Instagram foreground time for the "used X today" warning.
+      'android.permission.PACKAGE_USAGE_STATS',
+      // See if Instagram is installed and launch it after a granted key.
+      'android.permission.QUERY_ALL_PACKAGES',
     ],
   },
   plugins: [
@@ -70,9 +86,21 @@ const config: ExpoConfig = {
         // Android-only app — skip the iOS share-extension config (it needs an
         // iOS bundle id / app group we don't have).
         disableIOS: true,
-        androidIntentFilters: ['text/*', 'image/*'],
+        // 'application/pdf' lets a bank statement be shared straight to the app
+        // for weekly reconciliation.
+        androidIntentFilters: ['text/*', 'image/*', 'application/pdf'],
+        // Override the library's default launchMode of "singleTask" — that breaks
+        // expo-image-picker's camera (the result never comes back, so the blanket /
+        // receipt capture hangs on "Working…"). "singleTop" delivers camera results
+        // and still routes a shared payment/PDF via onNewIntent.
+        androidMainActivityAttributes: { 'android:launchMode': 'singleTop' },
       },
     ],
+    // Instagram gate enforcement (accessibility service + device-admin uninstall
+    // protection + UsageStats) — see plugins/withFocusGuard.js.
+    './plugins/withFocusGuard',
+    // On-device PDF text extraction for statement reconciliation.
+    './plugins/withPdfText',
   ],
   experiments: {
     typedRoutes: false,

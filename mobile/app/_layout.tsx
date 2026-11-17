@@ -9,8 +9,15 @@ import { StatusBar } from 'expo-status-bar';
 import { updateCategory } from '../src/api/client';
 import { unregisterReconcileTask } from '../src/background';
 import { setLocalCategory } from '../src/db/database';
-import { configureNotifications, scheduleWeeklyReportNotification } from '../src/notify/notifications';
-import { shareStore } from '../src/shareStore';
+import {
+  cancelLearningCheckin,
+  configureNotifications,
+  rearmStatementRemindersIfNeeded,
+  scheduleStatementReminders,
+  scheduleWeeklyReportNotification,
+} from '../src/notify/notifications';
+import { reconcileSessionOnForeground } from '../src/focus';
+import { chatgptShareLink, shareStore } from '../src/shareStore';
 import { ingestSms, syncBackend } from '../src/sms/ingest';
 import { startSmsListener } from '../src/sms/reader';
 import { isLockEnabled, LOCK_AFTER_MS } from '../src/lock';
@@ -36,6 +43,11 @@ async function handleNotificationResponse(response: Notifications.NotificationRe
   // (scoped so a later-dated monthly report doesn't hijack "latest").
   if (data?.type === 'weekly-report') {
     router.push({ pathname: '/report/[id]', params: { id: 'latest', type: 'weekly' } });
+    return;
+  }
+  // Weekly statement reminder → open the statements screen to upload one.
+  if (data?.type === 'statement-reminder') {
+    router.push('/statements');
     return;
   }
 
@@ -79,6 +91,8 @@ function AppShell() {
   useEffect(() => {
     configureNotifications().catch(() => {});
     scheduleWeeklyReportNotification().catch(() => {}); // idempotent weekly local reminder
+    cancelLearningCheckin().catch(() => {}); // check-in removed — clear it from older installs
+    scheduleStatementReminders().catch(() => {}); // Fri 8pm + every 8h until uploaded
     unregisterReconcileTask().catch(() => {}); // no inbox scanning — live capture only
 
     // Real-time SMS → ingest pipeline.
@@ -107,6 +121,8 @@ function AppShell() {
         }
         backgroundedAt.current = null;
         syncBackend().catch(() => {});
+        reconcileSessionOnForeground().catch(() => {}); // close any Instagram session the service missed
+        rearmStatementRemindersIfNeeded().catch(() => {}); // keep next week's nudges armed
       } else if (state === 'background' || state === 'inactive') {
         if (backgroundedAt.current == null) backgroundedAt.current = Date.now();
       }
@@ -125,19 +141,31 @@ function AppShell() {
   // (which may be a later mount entirely).
   useEffect(() => {
     if (hasShareIntent) {
+      const pdf = shareIntent.files?.find(
+        (f) => f.mimeType === 'application/pdf' || f.path?.toLowerCase().endsWith('.pdf'),
+      );
       const image = shareIntent.files?.find((f) => f.mimeType?.startsWith('image/'));
-      if (image?.path) shareStore.pending = { imageUri: image.path };
+      const chatgpt = chatgptShareLink(shareIntent.text);
+      if (pdf?.path) shareStore.pending = { pdfUri: pdf.path, pdfName: pdf.fileName ?? undefined };
+      else if (image?.path) shareStore.pending = { imageUri: image.path };
+      else if (chatgpt) shareStore.pending = { chatgptUrl: chatgpt };
       else if (shareIntent.text) shareStore.pending = { text: shareIntent.text };
       if (shareStore.pending) resetShareIntent();
     }
     if (navState?.key && shareStore.pending) {
       const p = shareStore.pending;
       shareStore.pending = null;
-      console.log('[share] navigating to /add', p);
-      router.push({
-        pathname: '/add',
-        params: { source: 'shared', ...(p.imageUri ? { imageUri: p.imageUri } : { text: p.text ?? '' }) },
-      });
+      // A bank-statement PDF → reconcile; a ChatGPT share link → flashcards; else a payment → /add.
+      if (p.pdfUri) {
+        router.push({ pathname: '/statement-import', params: { uri: p.pdfUri, name: p.pdfName ?? '' } });
+      } else if (p.chatgptUrl) {
+        router.push({ pathname: '/flashcard-import', params: { url: p.chatgptUrl } });
+      } else {
+        router.push({
+          pathname: '/add',
+          params: { source: 'shared', ...(p.imageUri ? { imageUri: p.imageUri } : { text: p.text ?? '' }) },
+        });
+      }
     }
   }, [hasShareIntent, navState?.key, shareIntent]);
 
@@ -167,6 +195,12 @@ function AppShell() {
           <Stack.Screen name="report/[id]" options={{ title: 'Report' }} />
           <Stack.Screen name="mandates" options={{ title: 'Mandates & EMIs' }} />
           <Stack.Screen name="rules" options={{ title: 'Classification rules' }} />
+          <Stack.Screen name="gate" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
+          <Stack.Screen name="focus" options={{ title: 'Focus' }} />
+          <Stack.Screen name="statements" options={{ title: 'Statements' }} />
+          <Stack.Screen name="statement/[id]" options={{ title: 'Reconcile' }} />
+          <Stack.Screen name="statement-import" options={{ title: 'Importing…', presentation: 'modal' }} />
+          <Stack.Screen name="flashcard-import" options={{ title: 'New flashcards', presentation: 'modal' }} />
         </Stack>
         {/* Lock overlays — on top of the Stack, tree stays mounted underneath. */}
         {checking && <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#000' }} />}

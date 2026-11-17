@@ -39,6 +39,26 @@ add_column_if_missing transactions mandate_id "mandate_id TEXT"
 add_column_if_missing reports      period_type "period_type TEXT NOT NULL DEFAULT 'weekly'"
 add_column_if_missing mandates     emi_total   "emi_total INTEGER"
 add_column_if_missing mandates     emi_start   "emi_start TEXT"
+add_column_if_missing classification_feedback merchant_norm "merchant_norm TEXT"
+add_column_if_missing transactions merchant_norm "merchant_norm TEXT"
+
+exec_sql "CREATE INDEX IF NOT EXISTS idx_txn_merchant ON transactions (merchant_norm)" >/dev/null
+exec_sql "CREATE TABLE IF NOT EXISTS merchant_alias (
+            pattern      TEXT PRIMARY KEY,
+            display_name TEXT NOT NULL,
+            created_at   TEXT NOT NULL,
+            updated_at   TEXT NOT NULL)" >/dev/null
+
+exec_sql "CREATE INDEX IF NOT EXISTS idx_feedback_merchant ON classification_feedback (merchant_norm)" >/dev/null
+
+# --- Personal-assistant tables (check-ins, chat, habit proofs, statements) ---
+# All CREATE ... IF NOT EXISTS, so this is the same idempotent block schema.sql
+# carries; pulled in here so an upgrade needs only `npm run db:migrate`.
+echo "  ⤳ assistant tables"
+ASSIST_SQL="$(mktemp -t pft-assistant).sql"
+sed -n '/Personal-assistant features/,$p' ./schema.sql > "$ASSIST_SQL"
+npx wrangler d1 execute "$DB" "$TARGET" --file "$ASSIST_SQL" >/dev/null
+rm -f "$ASSIST_SQL"
 
 # --- Backfill: migrate the old notes-based mandate link into mandate_id -----
 # M2 originally appended `mandate:<id>` to the notes column. The id is a UUID
@@ -56,5 +76,24 @@ exec_sql "UPDATE transactions
                         ELSE NULL
                       END
           WHERE notes LIKE '%mandate:%'" >/dev/null
+
+# --- Backfill: occurred_at for manually-logged transactions ----------------
+# The add-expense screen left occurredAt undefined when the user did not pick a
+# date, so 37 rows stored NULL. Every server query COALESCEs to created_at, so
+# the app looked right, but any direct SQL against occurred_at silently dropped
+# them. Pin them to their capture time so the column is authoritative.
+echo "  ⤳ backfilling occurred_at from created_at"
+exec_sql "UPDATE transactions SET occurred_at = created_at, updated_at = created_at
+          WHERE occurred_at IS NULL" >/dev/null
+
+# --- Backfill: merchant_norm on existing feedback --------------------------
+# Mirrors normalizeMerchant() closely enough for the ASCII merchant names in
+# this data (uppercase, strip punctuation, collapse whitespace). The learning
+# loop keys on this column, so without it every historical correction is invisible.
+echo "  ⤳ backfilling classification_feedback.merchant_norm"
+exec_sql "UPDATE classification_feedback
+          SET merchant_norm = trim(replace(replace(replace(replace(replace(
+                upper(merchant), '.', ' '), ',', ' '), '-', ' '), '/', ' '), '  ', ' '))
+          WHERE merchant_norm IS NULL AND merchant IS NOT NULL" >/dev/null
 
 echo "✓ Migration complete"

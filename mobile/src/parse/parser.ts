@@ -24,21 +24,42 @@ export function isBankSender(sender?: string): boolean {
   return BANK_SENDER_RE.test(s);
 }
 
+// A biller's "your bill is due" reminder, which carries an amount and a date but
+// means no money has moved. These are rejected outright: unlike the softer
+// EXCLUDE_RE below, no transaction verb elsewhere in the message can rescue them,
+// because reminders routinely end with "ignore if already paid" (see
+// HYPOTHETICAL_RE) or offer a "pay now" link.
+const DUE_NOTICE_RE =
+  /\b(?:bill|payment|amount|emi|premium|due amount|min(?:imum)? due|total due)\b[^.]{0,60}?\bis\s+due\b|\bdue\s+for\s+payment\b|\bis\s+due\s+(?:on|by)\b|\bplease\s+pay\s+(?:by|before)\b/i;
+
+// Clauses that name a payment verb hypothetically rather than reporting one.
+// "Please ignore if already paid" was letting every Airtel bill reminder through
+// the EXCLUDE_RE gate, booking the due amount as a completed debit.
+const HYPOTHETICAL_RE =
+  /\b(?:please\s+)?ignore\s+(?:this\s+)?if\s+(?:already\s+)?paid\b|\bif\s+(?:you\s+have\s+)?(?:already\s+)?(?:not\s+)?paid\b|\bkindly\s+ignore\b/gi;
+
 /**
  * True when the message looks like a real bank/UPI transaction alert (and is NOT
- * an OTP / promotional / KYC message). Keeps non-financial SMS off the network.
- * Broadened: a money token from a known bank sender counts even without a hint verb.
+ * an OTP / promotional / KYC / bill-reminder message). Keeps non-financial SMS off
+ * the network. Broadened: a money token from a known bank sender counts even
+ * without a hint verb.
  */
 export function isFinancialSms(text: string, sender?: string): boolean {
   if (!text) return false;
   if (OTP_RE.test(text) && !/\b(debited|credited|spent|paid)\b/i.test(text)) return false;
+
+  // A due notice never represents money that moved — reject before anything else.
+  if (DUE_NOTICE_RE.test(text)) return false;
 
   // Exclude mandate/autopay setup, payment reminders, failed/reversed txns,
   // promotional offers, and EMI due reminders — unless the message also contains
   // an actual transaction verb proving money already moved.
   const EXCLUDE_RE = /\b(mandate|auto[\s-]?pay|autopay|si registered|standing instruction|reminder|due date|due on|payment due|pay by|last date|failed|declined|unsuccessful|reversed|could not|cashback offer|get ₹|earn ₹|win ₹|flat ₹|emi due|emi of|instalment|set up|register|activate|e-?nach|nach debit|renewal|upcoming|will be debited|will be charged|scheduled|is due)\b/i;
   const ACTUAL_TXN_RE = /\b(debited|credited|spent|paid|withdrawn)\b/i;
-  if (EXCLUDE_RE.test(text) && !ACTUAL_TXN_RE.test(text)) return false;
+  // Test the verb against text with hypothetical clauses removed, so "ignore if
+  // already paid" can't stand in as proof the payment happened.
+  const evidence = text.replace(HYPOTHETICAL_RE, ' ');
+  if (EXCLUDE_RE.test(text) && !ACTUAL_TXN_RE.test(evidence)) return false;
 
   if (!MONEY_RE.test(text)) return false;
   return TXN_HINT_RE.test(text) || isBankSender(sender);

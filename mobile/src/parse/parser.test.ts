@@ -25,6 +25,37 @@ describe('isFinancialSms', () => {
   it('still rejects money text from an unknown promo sender without a hint verb', () => {
     expect(isFinancialSms('Grab Rs 500 off your next order!', 'AD-BIGSAV')).toBe(false);
   });
+
+  // Both real Airtel reminders that were booked as ₹1,415 debits in August.
+  it('rejects biller "payment due" reminders even when they say "already paid"', () => {
+    expect(
+      isFinancialSms(
+        'Hi, a payment of Rs 1415 is due on 19-AUG-26 for your Airtel Mobile 9100464563 To pay via Airtel Thanks App, click https://i.airtel.in/PPpayBills or website www.airtel.in Please Ignore if already paid.',
+        'AX-AIRTEL',
+      ),
+    ).toBe(false);
+    expect(
+      isFinancialSms(
+        'Hi! Bill of Rs. 1415 is due for payment on 19-AUG-26 for your Airtel No. 9100464563 . Pay with ease from the comfort of your home.',
+        'AX-AIRTEL',
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects credit-card and EMI due reminders', () => {
+    expect(isFinancialSms('Your total due of Rs 4,500 is due on 05-Sep-26 for card XX4003.', 'AX-UTKARSH')).toBe(false);
+    expect(isFinancialSms('EMI of Rs 7400 is due on 02-Sep-26. Please pay by the due date.', 'AX-HDFCBK')).toBe(false);
+  });
+
+  // The reminder gate must not swallow the real debit that follows it.
+  it('still accepts the actual debit alert for the same bill', () => {
+    expect(
+      isFinancialSms(
+        'Your account has been successfully debited with Rs 1415.00 on 19-Aug-26 towards Airtel for UPI Mandate AutoPay, RRN 110460941201-IDBI Bank',
+        'AX-IDBIBK',
+      ),
+    ).toBe(true);
+  });
 });
 
 describe('isBankSender', () => {

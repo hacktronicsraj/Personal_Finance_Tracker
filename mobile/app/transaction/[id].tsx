@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { deleteTransaction, parseTags, patchTransaction } from '../../src/api/client';
+import { clearAlias, deleteTransaction, parseTags, patchTransaction, setAlias } from '../../src/api/client';
 import { categoryColor, formatINR } from '../../src/config';
 import { deleteTxn, upsertTxn } from '../../src/db/database';
 import { useAllTags, useCategories, useTransaction } from '../../src/hooks';
@@ -30,6 +30,9 @@ export default function TransactionDetail() {
 
   const [amount, setAmount] = useState('');
   const [merchant, setMerchant] = useState('');
+  const [nickname, setNickname] = useState('');
+  const [nickStatus, setNickStatus] = useState('');
+  const [savingNick, setSavingNick] = useState(false);
   const [category, setCategory] = useState('');
   const [note, setNote] = useState('');
   const [tags, setTags] = useState<string[]>([]);
@@ -94,11 +97,39 @@ export default function TransactionDetail() {
   if (isLoading || !loaded) return <Screen><Loading /></Screen>;
   if (!txn) return <Screen><Muted>Transaction not found.</Muted></Screen>;
 
+  // The alias is keyed on the normalized bank name, so send that (not the label
+  // currently shown, which may already be a nickname).
+  async function saveNickname() {
+    if (!txn || !nickname.trim()) return;
+    setSavingNick(true);
+    setNickStatus('');
+    try {
+      const key = txn.merchant_norm ?? txn.merchant_raw ?? txn.merchant ?? '';
+      if (!key) throw new Error('no payee on this transaction');
+      const patterns = await setAlias(key, nickname.trim());
+      setNickStatus(`Renamed ${patterns} payee name${patterns === 1 ? '' : 's'} everywhere.`);
+      setNickname('');
+      qc.invalidateQueries({ queryKey: ['transactions'] });
+      qc.invalidateQueries({ queryKey: ['transaction', id] });
+      qc.invalidateQueries({ queryKey: ['summary'] });
+    } catch (e: any) {
+      setNickStatus(`Couldn't save: ${String(e?.message ?? e)}`);
+    } finally {
+      setSavingNick(false);
+    }
+  }
+
   const where = [merchant.trim() || 'Unknown', [txn.bank, txn.account_tail ? `··${txn.account_tail}` : null].filter(Boolean).join(' ')]
     .filter(Boolean)
     .join(' · ');
-  const dateStr = txn.occurred_at
-    ? new Date(txn.occurred_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  // SMS entries carry a date-only value (parser stores UTC midnight); manual/shared
+  // entries carry a real time. Show the time too, but only when it's meaningful.
+  const occ = txn.occurred_at ? new Date(txn.occurred_at) : null;
+  const dateOnly = !txn.occurred_at || txn.occurred_at.endsWith('T00:00:00.000Z');
+  const dateStr = occ
+    ? dateOnly
+      ? occ.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+      : occ.toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
     : '—';
 
   return (
@@ -155,6 +186,39 @@ export default function TransactionDetail() {
             placeholderTextColor={colors.ghost}
           />
         </EditRow>
+
+        {/* Nickname the payee itself, not just this row: applies to every past and
+            future transaction with the same counterparty. */}
+        <View style={[styles.row, styles.rowBorder, { flexDirection: 'column', alignItems: 'stretch', gap: 8 }]}>
+          <Text style={styles.rowLabel}>Nickname this payee</Text>
+          {txn?.merchant_raw ? (
+            <Muted>Bank calls it {txn.merchant_raw}</Muted>
+          ) : null}
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TextInput
+              value={nickname}
+              onChangeText={setNickname}
+              autoCapitalize="words"
+              placeholder="e.g. Evening chai stall"
+              placeholderTextColor={colors.ghost}
+              style={[styles.inlineInput, { flex: 1, textAlign: 'left' }]}
+            />
+            <Pressable
+              disabled={savingNick || !nickname.trim()}
+              onPress={saveNickname}
+              accessibilityRole="button"
+              accessibilityLabel="Save payee nickname"
+              style={({ pressed }) => [
+                styles.nickBtn,
+                (savingNick || !nickname.trim()) && { opacity: 0.4 },
+                pressed && { opacity: 0.6 },
+              ]}
+            >
+              <Text style={styles.nickBtnText}>Save</Text>
+            </Pressable>
+          </View>
+          {!!nickStatus && <Muted>{nickStatus}</Muted>}
+        </View>
 
         <Pressable
           onPress={() => setEditing(editing === 'category' ? null : 'category')}
@@ -281,6 +345,11 @@ function EditRow({
 }
 
 const styles = StyleSheet.create({
+  nickBtn: {
+    paddingHorizontal: 14, justifyContent: 'center', borderRadius: 8,
+    backgroundColor: colors.accentDim, borderWidth: 1, borderColor: colors.accentLine,
+  },
+  nickBtnText: { color: colors.accent, fontSize: 13, fontWeight: '600' },
   sub: { color: colors.sub, fontSize: 14, marginTop: 2 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: 13, paddingHorizontal: 2 },
   rowBorder: { borderTopWidth: 1, borderTopColor: colors.divider },

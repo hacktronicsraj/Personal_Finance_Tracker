@@ -14,7 +14,8 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
       bank TEXT, merchant TEXT, account_tail TEXT, ref_no TEXT, balance REAL,
       occurred_at TEXT, category TEXT, confidence REAL, notes TEXT, user_note TEXT,
       tags TEXT, mandate_id TEXT, source TEXT,
-      corrected INTEGER, created_at TEXT, updated_at TEXT
+      corrected INTEGER, created_at TEXT, updated_at TEXT,
+      merchant_norm TEXT
     );
     CREATE TABLE IF NOT EXISTS outbox (
       dedupe_key TEXT PRIMARY KEY,
@@ -48,6 +49,7 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
     ['tags', 'tags TEXT'],
     ['mandate_id', 'mandate_id TEXT'],
     ['source', 'source TEXT'],
+    ['merchant_norm', 'merchant_norm TEXT'],
   ] as const) {
     if (!have.has(col)) await _db.execAsync(`ALTER TABLE transactions ADD COLUMN ${ddl}`);
   }
@@ -102,18 +104,19 @@ export async function upsertTxn(row: TxnRow): Promise<void> {
     `INSERT INTO transactions
       (id, raw_text, amount, direction, currency, bank, merchant, account_tail, ref_no,
        balance, occurred_at, category, confidence, notes, user_note, tags, mandate_id, source,
-       corrected, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       corrected, created_at, updated_at, merchant_norm)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET
        category=excluded.category, confidence=excluded.confidence, notes=excluded.notes,
        user_note=excluded.user_note, tags=excluded.tags, mandate_id=excluded.mandate_id,
        source=excluded.source, amount=excluded.amount,
-       corrected=excluded.corrected, updated_at=excluded.updated_at, merchant=excluded.merchant`,
+       corrected=excluded.corrected, updated_at=excluded.updated_at, merchant=excluded.merchant,
+       merchant_norm=excluded.merchant_norm`,
     [
       row.id, row.raw_text, row.amount, row.direction, row.currency, row.bank, row.merchant,
       row.account_tail, row.ref_no, row.balance, row.occurred_at, row.category, row.confidence,
       row.notes, row.user_note, row.tags ?? null, row.mandate_id ?? null, row.source ?? null,
-      row.corrected, row.created_at, row.updated_at,
+      row.corrected, row.created_at, row.updated_at, row.merchant_norm ?? null,
     ],
   );
 }

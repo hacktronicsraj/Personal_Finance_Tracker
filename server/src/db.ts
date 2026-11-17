@@ -1,5 +1,11 @@
 import type { Classification, Env, ParsedTxn } from './types';
 import { normalizeMerchant } from './classify';
+import { NON_SPEND_CATEGORIES } from './categories';
+
+// SQL fragment + binds excluding settlement-style rows (see NON_SPEND_CATEGORIES)
+// from every spend aggregate, so a credit-card bill payment never double-counts
+// the card spends it settles.
+const NON_SPEND_SQL = `category NOT IN (${NON_SPEND_CATEGORIES.map(() => '?').join(',')})`;
 
 export interface TxnRow {
   id: string;
@@ -21,6 +27,8 @@ export interface TxnRow {
   user_note: string | null;
   tags: string | null; // JSON array string e.g. '["trip","work"]'
   mandate_id: string | null; // set by mandate auto-match (F1)
+  merchant_norm?: string | null; // normalizeMerchant(merchant); join key for merchant_alias
+  merchant_raw?: string | null; // pre-alias name, kept so the rename UI can show the original
   source: string;
   corrected: number;
   created_at: string;
@@ -133,10 +141,10 @@ export async function insertTxn(
   const cleanTags = args.tags?.map((t) => t.trim()).filter(Boolean) ?? [];
   await env.DB.prepare(
     `INSERT INTO transactions
-      (id, device_id, dedupe_key, raw_text, amount, direction, currency, bank, merchant,
+      (id, device_id, dedupe_key, raw_text, amount, direction, currency, bank, merchant, merchant_norm,
        account_tail, ref_no, balance, occurred_at, category, confidence, notes, user_note, tags, source,
        corrected, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   )
     .bind(
       id,
@@ -148,6 +156,7 @@ export async function insertTxn(
       p.currency ?? 'INR',
       p.bank ?? null,
       cls.merchant || p.merchant || null,
+      normalizeMerchant(cls.merchant || p.merchant || '') || null,
       p.accountTail ?? null,
       p.refNo ?? null,
       p.balance ?? null,
@@ -195,17 +204,84 @@ export function buildTxnListQuery(q: TxnQuery): { sql: string; binds: unknown[] 
   if (q.tag) { where.push('EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value = ?)'); binds.push(q.tag); }
   const sql =
     `SELECT * FROM transactions ${where.length ? 'WHERE ' + where.join(' AND ') : ''}` +
-    // Sort by when the row was recorded, not the (possibly back-dated) txn date, so
-    // a just-added entry always lands at the top of the list.
-    ` ORDER BY created_at DESC LIMIT ?`;
+    // Sort by the actual transaction date (occurred_at), falling back to when the
+    // row was recorded. This puts statement-reconciled / back-dated entries on
+    // their real day instead of bunching them under "today".
+    ` ORDER BY COALESCE(occurred_at, created_at) DESC, created_at DESC LIMIT ?`;
   binds.push(q.limit ?? 200);
   return { sql, binds };
 }
 
 export async function listTxns(env: Env, q: TxnQuery): Promise<TxnRow[]> {
   const { sql, binds } = buildTxnListQuery(q);
-  const { results } = await env.DB.prepare(sql).bind(...binds).all<TxnRow>();
+  const [{ results }, aliases] = await Promise.all([
+    env.DB.prepare(sql).bind(...binds).all<TxnRow>(),
+    listAliases(env),
+  ]);
+  return applyAliases(results ?? [], aliases);
+}
+
+/* ─────────────────────────── Merchant aliases ─────────────────────────── */
+
+export interface AliasRow {
+  pattern: string;
+  display_name: string;
+}
+
+/**
+ * Nicknames are resolved on READ rather than written onto rows, so naming a payee
+ * once renames its whole history and every future payment automatically — and the
+ * bank's original name is never destroyed (kept as merchant_raw for the edit UI).
+ */
+export function applyAliases(rows: TxnRow[], aliases: AliasRow[]): TxnRow[] {
+  if (!aliases.length) return rows;
+  const byPattern = new Map(aliases.map((a) => [a.pattern, a.display_name]));
+  return rows.map((r) => {
+    const name = r.merchant_norm ? byPattern.get(r.merchant_norm) : undefined;
+    return name ? { ...r, merchant: name, merchant_raw: r.merchant } : r;
+  });
+}
+
+export async function listAliases(env: Env): Promise<AliasRow[]> {
+  const { results } = await env.DB.prepare(
+    'SELECT pattern, display_name FROM merchant_alias ORDER BY display_name',
+  ).all<AliasRow>();
   return results ?? [];
+}
+
+/**
+ * Name a payee. The alias is stored against every merchant_norm variant of the
+ * same counterparty that already appears in the history — banks truncate payee
+ * names (IDBI cuts at 15 chars), so "NINETIES KITCHEN" and "NINETIES KITCHE"
+ * arrive as different strings for one shop and both must resolve to the nickname.
+ * Returns how many patterns were written.
+ */
+export async function setAlias(env: Env, merchant: string, displayName: string, now: string): Promise<number> {
+  const norm = normalizeMerchant(merchant);
+  const name = displayName.trim();
+  if (!norm || !name) return 0;
+
+  const { results } = await env.DB.prepare(
+    `SELECT DISTINCT merchant_norm FROM transactions
+      WHERE merchant_norm IS NOT NULL
+        AND ( merchant_norm = ?1
+           OR (length(?1)            >= ${MIN_PREFIX} AND merchant_norm LIKE ?1 || '%')
+           OR (length(merchant_norm) >= ${MIN_PREFIX} AND ?1 LIKE merchant_norm || '%') )`,
+  ).bind(norm).all<{ merchant_norm: string }>();
+
+  const patterns = new Set([norm, ...(results ?? []).map((r) => r.merchant_norm)]);
+  for (const p of patterns) {
+    await env.DB.prepare(
+      `INSERT INTO merchant_alias (pattern, display_name, created_at, updated_at) VALUES (?,?,?,?)
+       ON CONFLICT(pattern) DO UPDATE SET display_name = excluded.display_name, updated_at = excluded.updated_at`,
+    ).bind(p, name, now, now).run();
+  }
+  return patterns.size;
+}
+
+export async function deleteAlias(env: Env, pattern: string): Promise<boolean> {
+  const r = await env.DB.prepare('DELETE FROM merchant_alias WHERE pattern = ?').bind(pattern).run();
+  return (r.meta?.changes ?? 0) > 0;
 }
 
 /** Link a debit to the mandate it satisfied. Idempotent per (txn, mandate). */
@@ -237,15 +313,18 @@ export async function updateTransaction(
     binds.push(fields.category);
     if (fields.category !== existing.category) {
       await env.DB.prepare(
-        'INSERT INTO classification_feedback (id, txn_id, predicted_category, corrected_category, merchant, raw_text, created_at) VALUES (?,?,?,?,?,?,?)',
+        'INSERT INTO classification_feedback (id, txn_id, predicted_category, corrected_category, merchant, merchant_norm, raw_text, created_at) VALUES (?,?,?,?,?,?,?,?)',
       )
-        .bind(crypto.randomUUID(), id, existing.category, fields.category, existing.merchant, existing.raw_text, now)
+        .bind(crypto.randomUUID(), id, existing.category, fields.category, existing.merchant, existing.merchant ? normalizeMerchant(existing.merchant) : null, existing.raw_text, now)
         .run();
     }
   }
   if (fields.merchant !== undefined) {
+    const m = fields.merchant?.toString().trim() || null;
     sets.push('merchant = ?');
-    binds.push(fields.merchant?.toString().trim() || null);
+    binds.push(m);
+    sets.push('merchant_norm = ?');
+    binds.push(m ? normalizeMerchant(m) || null : null);
   }
   if (typeof fields.amount === 'number' && Number.isFinite(fields.amount) && fields.amount > 0) {
     sets.push('amount = ?');
@@ -286,8 +365,8 @@ export async function recentFeedback(env: Env, limit = 12) {
 }
 
 export async function categorySummary(env: Env, from?: string, to?: string) {
-  const where: string[] = ["direction = 'debit'"];
-  const binds: unknown[] = [];
+  const where: string[] = ["direction = 'debit'", NON_SPEND_SQL];
+  const binds: unknown[] = [...NON_SPEND_CATEGORIES];
   if (from) { where.push('COALESCE(occurred_at, created_at) >= ?'); binds.push(from); }
   if (to) { where.push('COALESCE(occurred_at, created_at) <= ?'); binds.push(to); }
   const sql = `SELECT category, COUNT(*) AS count, SUM(amount) AS total
@@ -298,16 +377,28 @@ export async function categorySummary(env: Env, from?: string, to?: string) {
 }
 
 export async function topMerchants(env: Env, from?: string, to?: string, limit = 10) {
-  const where: string[] = ["direction = 'debit'", 'merchant IS NOT NULL'];
-  const binds: unknown[] = [];
+  const where: string[] = ["direction = 'debit'", 'merchant IS NOT NULL', NON_SPEND_SQL];
+  const binds: unknown[] = [...NON_SPEND_CATEGORIES];
   if (from) { where.push('COALESCE(occurred_at, created_at) >= ?'); binds.push(from); }
   if (to) { where.push('COALESCE(occurred_at, created_at) <= ?'); binds.push(to); }
-  const sql = `SELECT merchant, COUNT(*) AS count, SUM(amount) AS total
+  // Grouped on the normalized name, not the raw one, so casing/punctuation variants
+  // of one payee ("Zepto" vs "ZEPTO") aggregate together and a nickname can replace
+  // the whole group. MIN(merchant) is the fallback label when no alias is set.
+  const sql = `SELECT COALESCE(merchant_norm, merchant) AS key, MIN(merchant) AS sample,
+                      COUNT(*) AS count, SUM(amount) AS total
                FROM transactions WHERE ${where.join(' AND ')}
-               GROUP BY merchant ORDER BY total DESC LIMIT ?`;
+               GROUP BY key ORDER BY total DESC LIMIT ?`;
   binds.push(limit);
-  const { results } = await env.DB.prepare(sql).bind(...binds).all();
-  return (results ?? []) as { merchant: string; count: number; total: number }[];
+  const [{ results }, aliases] = await Promise.all([
+    env.DB.prepare(sql).bind(...binds).all<{ key: string; sample: string; count: number; total: number }>(),
+    listAliases(env),
+  ]);
+  const byPattern = new Map(aliases.map((a) => [a.pattern, a.display_name]));
+  return (results ?? []).map((r) => ({
+    merchant: byPattern.get(r.key) ?? r.sample,
+    count: r.count,
+    total: r.total,
+  }));
 }
 
 export async function changedSince(env: Env, cursor: string, limit = 500): Promise<TxnRow[]> {
@@ -331,6 +422,34 @@ export async function addCategory(env: Env, name: string, icon?: string, color?:
 
 export async function getRuleByPattern(env: Env, pattern: string) {
   return env.DB.prepare('SELECT * FROM merchant_rules WHERE pattern = ?').bind(pattern).first<{
+    id: string; pattern: string; category: string; source: string; hit_count: number;
+  }>();
+}
+
+/** Shortest prefix that may stand in for a full merchant name — below this,
+ *  "SRI" would match every payee starting with those letters. */
+const MIN_PREFIX = 8;
+
+/**
+ * Look up a rule for a merchant, tolerating the truncation banks apply to payee
+ * names. IDBI cuts them to 15 characters, so the same shop arrives as both
+ * "NINETIES KITCHEN" and "NINETIES KITCHE" (likewise ROYAL BISON AUTO, ZEPTO
+ * MARKETPLACE, ROPPEN TRANSPORTATION). Exact-match lookup treats those as
+ * different merchants and re-asks the LLM for one it was already taught.
+ *
+ * Matches in either direction — the stored rule may be the truncated form or the
+ * full one — and prefers an exact hit, then the longest (most specific) prefix.
+ */
+export async function findRuleForMerchant(env: Env, norm: string) {
+  if (!norm) return null;
+  return env.DB.prepare(
+    `SELECT * FROM merchant_rules
+      WHERE pattern = ?1
+         OR (length(?1)     >= ${MIN_PREFIX} AND pattern LIKE ?1 || '%')
+         OR (length(pattern) >= ${MIN_PREFIX} AND ?1 LIKE pattern || '%')
+      ORDER BY (pattern = ?1) DESC, length(pattern) DESC
+      LIMIT 1`,
+  ).bind(norm).first<{
     id: string; pattern: string; category: string; source: string; hit_count: number;
   }>();
 }
@@ -364,34 +483,57 @@ export async function updateRuleCategory(env: Env, id: string, category: string,
   await env.DB.prepare('UPDATE merchant_rules SET category = ?, updated_at = ? WHERE id = ?').bind(category, now, id).run();
 }
 
+/**
+ * Merchant labels that are placeholders rather than real counterparties — a
+ * generic card alert with no payee, or parser boilerplate that leaked into the
+ * field. They appear against many unrelated categories (the live data has
+ * "SuperCard Payment" corrected to six different ones), so a rule keyed on them
+ * would mis-file every future card spend. Never learn from these.
+ */
+const UNLEARNABLE_MERCHANT_RE =
+  /^(?:\?|unknown|n\/?a|upi(?: transfer| payment)?|super\s?ca(?:rd)? payment|card payment|payment|dispute call\b.*|to (?:block|dispute)\b.*)$/i;
+
+export function isLearnableMerchant(merchant: string | null | undefined): boolean {
+  const m = (merchant ?? '').trim();
+  if (m.length < 3) return false;
+  if (UNLEARNABLE_MERCHANT_RE.test(m)) return false;
+  return /[A-Za-z]{3}/.test(m); // needs real letters, not just a ref number
+}
+
+/**
+ * Turn a user's re-categorisation into a durable merchant rule.
+ *
+ * The previous version scanned the 50 most recent feedback rows globally and
+ * counted only *consecutive* agreements, so a merchant corrected twice with any
+ * other merchant's correction in between never qualified — across 40 real
+ * corrections it produced zero rules. Now the merchant's own history is queried
+ * directly (via merchant_norm) and judged on a majority:
+ *   - no prior conflicting correction  → one correction is enough
+ *   - conflicting history              → the new category must hold a strict
+ *                                        majority of that merchant's corrections
+ */
 export async function processLearningLoop(env: Env, merchant: string | null, newCategory: string, now: string) {
-  if (!merchant) return;
-  const norm = normalizeMerchant(merchant);
+  if (!isLearnableMerchant(merchant)) return;
+  const norm = normalizeMerchant(merchant!);
   if (!norm) return;
 
   const rule = await getRuleByPattern(env, norm);
   if (rule && rule.source === 'manual') return; // Do not touch manual rules
 
-  // Get recent feedbacks for this normalized merchant
-  // We don't store normalized merchant in classification_feedback, but we can just query feedbacks matching the exact unnormalized merchant,
-  // or better, fetch recent feedbacks and filter by normalized merchant.
   const { results } = await env.DB.prepare(
-    'SELECT corrected_category, merchant FROM classification_feedback ORDER BY created_at DESC LIMIT 50'
-  ).all<{corrected_category: string; merchant: string}>();
+    'SELECT corrected_category FROM classification_feedback WHERE merchant_norm = ?'
+  ).bind(norm).all<{ corrected_category: string }>();
 
-  let consistentCount = 0;
+  const tally = new Map<string, number>();
   for (const f of results ?? []) {
-    if (normalizeMerchant(f.merchant) === norm) {
-      if (f.corrected_category === newCategory) {
-        consistentCount++;
-      } else {
-        break; // Stop counting if we hit a different category
-      }
-    }
+    if (!f.corrected_category) continue;
+    tally.set(f.corrected_category, (tally.get(f.corrected_category) ?? 0) + 1);
   }
+  const agree = tally.get(newCategory) ?? 0;
+  const total = [...tally.values()].reduce((a, b) => a + b, 0);
+  const conflicting = total - agree;
 
-  // If >= 2 consistent corrections, upsert the rule (flips it if it exists and was contested)
-  if (consistentCount >= 2) {
+  if (conflicting === 0 || agree > conflicting) {
     await upsertRule(env, norm, newCategory, 'learned', now);
   }
 }
@@ -558,6 +700,207 @@ export async function findMandateMatch(
   return null;
 }
 
+/* ─────────────────────────── Runway ─────────────────────────── */
+
+export interface Runway {
+  balance: number | null;
+  balanceAsOf: string | null;
+  dailyBurn: number;
+  spentWindow: number;
+  windowDays: number;
+  runwayDays: number | null;
+}
+
+/**
+ * How long the money on hand lasts at the recent burn rate.
+ *
+ * Balance comes from the bank's own SMS ("Bal Rs 7287.73"), which is the only
+ * authoritative figure available — it reflects every movement, including the ones
+ * never captured as transactions. Burn is the trailing `windowDays` of debits,
+ * excluding non-spend settlements.
+ *
+ * Caveat worth surfacing in the UI: this is ONE account's balance. Money parked
+ * elsewhere is invisible to it, so treat it as a floor, not net worth.
+ */
+export async function computeRunway(env: Env, nowIso: string, windowDays = 30): Promise<Runway> {
+  const since = new Date(new Date(nowIso).getTime() - windowDays * 86400000).toISOString();
+
+  const latest = await env.DB.prepare(
+    `SELECT balance, COALESCE(occurred_at, created_at) AS at FROM transactions
+      WHERE balance IS NOT NULL ORDER BY created_at DESC LIMIT 1`,
+  ).first<{ balance: number; at: string }>();
+
+  const spent = await env.DB.prepare(
+    `SELECT COALESCE(SUM(amount), 0) AS total FROM transactions
+      WHERE direction = 'debit' AND ${NON_SPEND_SQL}
+        AND COALESCE(occurred_at, created_at) >= ?`,
+  ).bind(...NON_SPEND_CATEGORIES, since).first<{ total: number }>();
+
+  const spentWindow = spent?.total ?? 0;
+  const dailyBurn = spentWindow / windowDays;
+  const balance = latest?.balance ?? null;
+  // A zero burn would divide to Infinity — report "unknown" instead.
+  const runwayDays = balance !== null && dailyBurn > 0 ? Math.floor(balance / dailyBurn) : null;
+
+  return { balance, balanceAsOf: latest?.at ?? null, dailyBurn, spentWindow, windowDays, runwayDays };
+}
+
+/* ─────────────────────── Recurring detection ─────────────────────── */
+
+export interface RecurringSuggestion {
+  merchant: string;
+  pattern: string;
+  amount: number;
+  dayOfCycle: number;
+  frequency: 'monthly' | 'weekly';
+  occurrences: number;
+  category: string;
+  lastSeen: string;
+  confidence: number;
+}
+
+interface Charge { at: string; amount: number; category: string; merchant: string; autopay?: boolean }
+
+/**
+ * A bank alert that names a standing instruction ("...towards Groww for UPI
+ * Mandate AutoPay"). The message itself proves a mandate exists, so one sighting
+ * is enough — waiting for a second month would hide a live subscription for
+ * up to 31 days.
+ */
+export const AUTOPAY_RE = /\bmandate\s*autopay\b|\bauto\s?pay\b|\be-?nach\b|\bstanding instruction\b|\bsi\s+debit\b/i;
+
+/**
+ * Decide whether one payee's charge history looks like a subscription/EMI.
+ * Pure so the spacing rules are unit-testable without D1.
+ *
+ * Requires >= 2 charges, a stable amount (each within 20% of the median), and
+ * spacing that clusters near a weekly or monthly period. Monthly is checked by
+ * day-of-month agreement rather than raw day-gaps, because month lengths differ
+ * and a 28th-of-the-month charge is 28-31 days apart depending on the month.
+ */
+export function detectRecurring(charges: Charge[]): RecurringSuggestion | null {
+  if (charges.length === 0) return null;
+  const sorted = [...charges].sort((a, b) => a.at.localeCompare(b.at));
+  const last = sorted[sorted.length - 1];
+
+  // Self-declared autopay: the SMS says a mandate charged the account, so the
+  // spacing evidence the rules below look for is unnecessary.
+  if (sorted.some((c) => c.autopay)) {
+    const amounts = [...sorted.map((c) => c.amount)].sort((a, b) => a - b);
+    return {
+      merchant: last.merchant,
+      pattern: '',
+      amount: amounts[Math.floor(amounts.length / 2)],
+      dayOfCycle: new Date(last.at).getUTCDate(),
+      frequency: 'monthly',
+      occurrences: sorted.length,
+      category: last.category,
+      lastSeen: last.at,
+      confidence: sorted.length > 1 ? 0.9 : 0.7,
+    };
+  }
+
+  if (charges.length < 2) return null;
+
+  const amounts = [...sorted.map((c) => c.amount)].sort((a, b) => a - b);
+  const median = amounts[Math.floor(amounts.length / 2)];
+  if (median <= 0) return null;
+  if (!sorted.every((c) => Math.abs(c.amount - median) <= median * 0.2)) return null;
+
+  const days = sorted.map((c) => new Date(c.at).getUTCDate());
+  const gaps: number[] = [];
+  for (let i = 1; i < sorted.length; i++) {
+    gaps.push((new Date(sorted[i].at).getTime() - new Date(sorted[i - 1].at).getTime()) / 86400000);
+  }
+
+  // Monthly: every charge lands within 3 days of the same day-of-month, and no two
+  // charges sit in the same month (which would make it a burst, not a cycle).
+  const dayOfCycle = days[0];
+  const sameDay = days.every((d) => {
+    let diff = Math.abs(d - dayOfCycle);
+    if (diff > 15) diff = 31 - diff; // wrap month boundary
+    return diff <= 3;
+  });
+  const monthlyGaps = gaps.every((g) => g >= 25 && g <= 36);
+  if (sameDay && monthlyGaps) {
+    return {
+      merchant: sorted[sorted.length - 1].merchant,
+      pattern: '',
+      amount: median,
+      dayOfCycle,
+      frequency: 'monthly',
+      occurrences: sorted.length,
+      category: sorted[sorted.length - 1].category,
+      lastSeen: sorted[sorted.length - 1].at,
+      confidence: Math.min(0.95, 0.6 + 0.15 * (sorted.length - 2)),
+    };
+  }
+
+  // Weekly: every gap within a day of 7.
+  if (gaps.length >= 2 && gaps.every((g) => g >= 6 && g <= 8)) {
+    return {
+      merchant: sorted[sorted.length - 1].merchant,
+      pattern: '',
+      amount: median,
+      dayOfCycle,
+      frequency: 'weekly',
+      occurrences: sorted.length,
+      category: sorted[sorted.length - 1].category,
+      lastSeen: sorted[sorted.length - 1].at,
+      confidence: Math.min(0.9, 0.55 + 0.15 * (sorted.length - 2)),
+    };
+  }
+  return null;
+}
+
+/**
+ * Scan the history for charges that look recurring and are not already tracked as
+ * a mandate. Surfaced as suggestions the user accepts, never auto-created — an
+ * auto-created mandate that guesses wrong is worse than no mandate.
+ */
+export async function suggestRecurring(env: Env, lookbackDays = 120): Promise<RecurringSuggestion[]> {
+  const since = new Date(Date.now() - lookbackDays * 86400000).toISOString();
+  const { results } = await env.DB.prepare(
+    `SELECT merchant, merchant_norm, amount, category, raw_text,
+            COALESCE(occurred_at, created_at) AS at
+       FROM transactions
+      WHERE direction = 'debit' AND merchant IS NOT NULL
+        AND COALESCE(occurred_at, created_at) >= ?
+      ORDER BY at ASC`,
+  ).bind(since).all<{ merchant: string; merchant_norm: string | null; amount: number; category: string; raw_text: string | null; at: string }>();
+
+  const groups = new Map<string, Charge[]>();
+  for (const r of results ?? []) {
+    const key = r.merchant_norm || normalizeMerchant(r.merchant);
+    if (!key || !isLearnableMerchant(r.merchant)) continue;
+    const list = groups.get(key) ?? [];
+    list.push({
+      at: r.at,
+      amount: r.amount,
+      category: r.category,
+      merchant: r.merchant,
+      autopay: AUTOPAY_RE.test(r.raw_text ?? ''),
+    });
+    groups.set(key, list);
+  }
+
+  const [mandates, aliases] = await Promise.all([listMandates(env), listAliases(env)]);
+  const byPattern = new Map(aliases.map((a) => [a.pattern, a.display_name]));
+
+  const out: RecurringSuggestion[] = [];
+  for (const [key, charges] of groups) {
+    const hit = detectRecurring(charges);
+    if (!hit) continue;
+    // Skip anything an existing mandate already covers.
+    const covered = mandates.some((m) =>
+      mandateMatches(m, { merchant: hit.merchant, amount: hit.amount, dayOfMonth: hit.dayOfCycle }),
+    );
+    if (covered) continue;
+    out.push({ ...hit, pattern: key, merchant: byPattern.get(key) ?? hit.merchant });
+  }
+  return out.sort((a, b) => b.confidence - a.confidence || b.amount - a.amount);
+}
+
 /* ─────────────────────────── Reports (M7) ─────────────────────────── */
 
 export interface ReportRow {
@@ -661,8 +1004,8 @@ export async function deleteAttachmentsForTxn(env: Env, txnId: string): Promise<
 }
 
 export async function tagAnalytics(env: Env, from?: string, to?: string) {
-  const where: string[] = ["direction = 'debit'", 'tags IS NOT NULL'];
-  const binds: unknown[] = [];
+  const where: string[] = ["direction = 'debit'", 'tags IS NOT NULL', NON_SPEND_SQL];
+  const binds: unknown[] = [...NON_SPEND_CATEGORIES];
   if (from) { where.push('COALESCE(occurred_at, created_at) >= ?'); binds.push(from); }
   if (to) { where.push('COALESCE(occurred_at, created_at) <= ?'); binds.push(to); }
   const sql = `SELECT json_each.value AS tag, COUNT(*) AS count, SUM(amount) AS total

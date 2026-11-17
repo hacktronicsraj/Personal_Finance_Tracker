@@ -23,6 +23,8 @@ export interface TxnRow {
   user_note: string | null;
   tags: string | null; // JSON array string e.g. '["trip","work"]'
   mandate_id: string | null;
+  merchant_norm?: string | null;
+  merchant_raw?: string | null; // bank's original name when a nickname is applied
   source: string; // 'sms' | 'shared' | 'manual'
   corrected: number;
   created_at: string;
@@ -35,19 +37,31 @@ export interface AnalyticsSummary {
   topMerchants: { merchant: string; count: number; total: number }[];
 }
 
-async function req<T>(path: string, init?: RequestInit): Promise<T> {
+// Requests time out after 30s. `fetch` in React Native has no default timeout, so
+// a stalled connection (slow first TLS handshake, a dead network) would otherwise
+// hang a screen forever — this is what left onboarding stuck on "Setting up…".
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+async function req<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
   const { backendUrl, apiToken } = await getSettings();
   if (!backendUrl) throw new Error('Backend URL not configured');
-  const res = await fetch(`${backendUrl}${path}`, {
-    ...init,
-    headers: {
-      'content-type': 'application/json',
-      ...(apiToken ? { authorization: `Bearer ${apiToken}` } : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
-  if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} -> ${res.status}`);
-  return (await res.json()) as T;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), init?.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${backendUrl}${path}`, {
+      ...init,
+      signal: ctrl.signal,
+      headers: {
+        'content-type': 'application/json',
+        ...(apiToken ? { authorization: `Bearer ${apiToken}` } : {}),
+        ...(init?.headers ?? {}),
+      },
+    });
+    if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} -> ${res.status}`);
+    return (await res.json()) as T;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function classify(input: {
@@ -131,6 +145,59 @@ export async function fetchSummary(params?: { from?: string; to?: string }): Pro
 export async function fetchTagAnalytics(params?: { from?: string; to?: string }): Promise<TagTotal[]> {
   const data = await req<{ tags: TagTotal[] }>(`/analytics/tags${toQuery(params)}`);
   return data.tags;
+}
+
+export interface Runway {
+  balance: number | null;
+  balanceAsOf: string | null;
+  dailyBurn: number;
+  spentWindow: number;
+  windowDays: number;
+  runwayDays: number | null;
+}
+
+export async function fetchRunway(days?: number): Promise<Runway> {
+  return req<Runway>(`/analytics/runway${days ? `?days=${days}` : ''}`);
+}
+
+export interface MerchantAlias {
+  pattern: string;
+  display_name: string;
+}
+
+export async function fetchAliases(): Promise<MerchantAlias[]> {
+  const data = await req<{ aliases: MerchantAlias[] }>('/aliases');
+  return data.aliases;
+}
+
+/** Name a payee — applies to its whole history and every future payment. */
+export async function setAlias(merchant: string, displayName: string): Promise<number> {
+  const data = await req<{ patterns: number }>('/aliases', {
+    method: 'POST',
+    body: JSON.stringify({ merchant, displayName }),
+  });
+  return data.patterns;
+}
+
+export async function clearAlias(pattern: string): Promise<void> {
+  await req(`/aliases/${encodeURIComponent(pattern)}`, { method: 'DELETE' });
+}
+
+export interface RecurringSuggestion {
+  merchant: string;
+  pattern: string;
+  amount: number;
+  dayOfCycle: number;
+  frequency: 'monthly' | 'weekly';
+  occurrences: number;
+  category: string;
+  lastSeen: string;
+  confidence: number;
+}
+
+export async function fetchRecurringSuggestions(): Promise<RecurringSuggestion[]> {
+  const data = await req<{ suggestions: RecurringSuggestion[] }>('/mandates/suggestions');
+  return data.suggestions;
 }
 
 export async function syncSince(cursor: string): Promise<{ transactions: TxnRow[]; nextCursor: string }> {
@@ -291,4 +358,147 @@ export async function generateReport(type: 'weekly' | 'monthly' = 'weekly', offs
 
 export async function health(): Promise<{ ok: boolean; mode: string }> {
   return req('/health');
+}
+
+/* ─────────────────────────── Learning check-ins ─────────────────────────── */
+
+export interface AssistantMessage {
+  id: string;
+  thread: string;
+  role: 'user' | 'assistant';
+  content: string;
+  meta: string | null;
+  created_at: string;
+}
+
+export interface LearningMessageResult {
+  day: string;
+  accepted: boolean;
+  justAccepted: boolean;
+  reason?: string | null;
+  source?: string;
+  reply: AssistantMessage;
+}
+
+/** Send a learning check-in / chat message. Until the day is accepted this is a
+ * check-in attempt; a rejected attempt comes back accepted:false + a reason. */
+export async function sendLearningMessage(text: string, opts?: { day?: string; topic?: string }): Promise<LearningMessageResult> {
+  return req('/learning/message', { method: 'POST', body: JSON.stringify({ text, ...opts }) });
+}
+
+export async function fetchLearningThread(day: string): Promise<{ day: string; accepted: boolean; messages: AssistantMessage[] }> {
+  return req(`/learning/thread/${day}`);
+}
+
+export interface CheckinRow {
+  id: string; day: string; topic: string | null; text: string;
+  word_count: number; accepted: number; verdict_source: string | null; reason: string | null; created_at: string;
+}
+
+export async function fetchCheckins(limit = 60): Promise<{ checkins: CheckinRow[]; streak: number }> {
+  return req(`/learning/checkins?limit=${limit}`);
+}
+
+/* ─────────────────────────── Focus / blanket ─────────────────────────── */
+
+export interface BlanketResult {
+  verified: boolean;
+  failOpen: boolean;
+  reason: string;
+  day: string;
+  eventId: string;
+  detail?: Record<string, unknown>;
+}
+
+export async function submitBlanket(imageBase64: string, mimeType = 'image/jpeg', day?: string): Promise<BlanketResult> {
+  return req('/focus/blanket', { method: 'POST', body: JSON.stringify({ imageBase64, mimeType, day }) });
+}
+
+export interface FocusEvent {
+  id: string; kind: string; day: string; ok: number; fail_open: number;
+  reason: string | null; detail: string | null; r2_key: string | null; created_at: string;
+}
+
+export async function fetchBlanketEvents(limit = 30): Promise<FocusEvent[]> {
+  const data = await req<{ events: FocusEvent[] }>(`/focus/blanket?limit=${limit}`);
+  return data.events;
+}
+
+/* ─────────────────────────── Statements ─────────────────────────── */
+
+export interface StatementSummary {
+  id: string; file_name: string | null; bank: string | null; account_tail: string | null;
+  period_start: string; period_end: string; row_count: number; debit_count: number; credit_count: number;
+  balance_checked: number; balance_ok: number; parser: string; status: 'pending' | 'applied';
+  added: number; removed: number; created_at: string; applied_at: string | null;
+}
+
+export interface StatementItem {
+  id: string; statement_id: string; kind: 'add' | 'remove' | 'match'; txn_id: string | null;
+  date: string | null; amount: number; description: string | null; merchant: string | null;
+  category: string | null; ref: string | null; balance: number | null;
+  suggested: 'approve' | 'deny' | null; decision: 'approved' | 'denied' | null; note: string | null; created_at: string;
+}
+
+export interface StatementDetail { statement: StatementSummary; items: StatementItem[]; }
+
+/** Send extracted statement text (one string per page) for parsing + reconciliation. */
+export async function parseStatement(input: { fileName?: string; pages?: string[]; images?: string[] }): Promise<StatementDetail> {
+  return req('/statements/parse', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function fetchStatements(): Promise<StatementSummary[]> {
+  const data = await req<{ statements: StatementSummary[] }>('/statements');
+  return data.statements;
+}
+
+export async function fetchStatement(id: string): Promise<StatementDetail> {
+  return req(`/statements/${id}`);
+}
+
+export type StatementDecision = 'approve' | 'deny' | { decision: 'approve' | 'deny'; category?: string };
+
+export async function applyStatement(id: string, decisions: Record<string, StatementDecision>): Promise<StatementDetail & { added: number; removed: number }> {
+  return req(`/statements/${id}/apply`, { method: 'POST', body: JSON.stringify({ decisions }) });
+}
+
+/* ─────────────────────────── Flashcards ─────────────────────────── */
+
+export interface QuizCard {
+  id: string;
+  question: string;
+  options: string[];
+  difficulty: string;
+}
+
+/** Import a shared ChatGPT conversation into flashcards. The phone fetches the
+ * share HTML itself (ChatGPT blocks Cloudflare Worker egress) and sends it up. */
+export async function importFlashcards(url: string, topic = 'inference engineering'): Promise<{ added: number; total: number; title?: string; alreadyImported?: boolean }> {
+  let html: string | undefined;
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'user-agent':
+          'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        accept: 'text/html',
+      },
+    });
+    if (res.ok) html = await res.text();
+  } catch {
+    /* fall back to server-side fetch */
+  }
+  return req('/flashcards/import', { method: 'POST', body: JSON.stringify({ url, topic, html }), timeoutMs: 60000 });
+}
+
+export async function flashcardCount(): Promise<number> {
+  const d = await req<{ count: number }>('/flashcards/count');
+  return d.count;
+}
+
+export async function fetchQuiz(n = 5): Promise<{ count: number; cards: QuizCard[] }> {
+  return req(`/flashcards/quiz?n=${n}`);
+}
+
+export async function gradeQuiz(answers: Record<string, number>): Promise<{ passed: boolean; correct: number; total: number }> {
+  return req('/flashcards/grade', { method: 'POST', body: JSON.stringify({ answers }) });
 }

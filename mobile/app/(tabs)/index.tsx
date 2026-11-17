@@ -52,6 +52,7 @@ export default function Dashboard() {
       .sort((a, b) => a.due.getTime() - b.due.getTime());
   }, [mandatesQ.data]);
 
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
       <ScrollView
@@ -192,6 +193,10 @@ export default function Dashboard() {
 }
 
 const styles = StyleSheet.create({
+  runwayTop: { flexDirection: 'row', alignItems: 'flex-start' },
+  runwayBal: { color: colors.text, fontSize: 26, fontWeight: '700', marginTop: 4 },
+  runwayDays: { fontSize: 26, fontWeight: '700', marginTop: 4 },
+  runwaySub: { color: colors.sub, fontSize: 12, marginTop: 8 },
   stackbar: {
     flexDirection: 'row',
     height: 10,

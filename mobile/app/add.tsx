@@ -89,7 +89,11 @@ export default function AddScreen() {
       direction: 'debit',
       currency: 'INR',
       merchant: merchant.trim() || undefined,
-      occurredAt,
+      // The date picker is optional, but the column must not be: leaving it NULL
+      // made these rows invisible to any query filtering on occurred_at directly
+      // (the server COALESCEs, so the app looked fine while exports and ad-hoc
+      // SQL silently dropped them). Default to now when the user didn't pick.
+      occurredAt: occurredAt ?? new Date().toISOString(),
     };
     const { transaction, queued } = await saveConfirmed(parsed, {
       source,

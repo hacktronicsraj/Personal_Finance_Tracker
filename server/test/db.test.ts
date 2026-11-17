@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildTxnListQuery, mandateMatches } from '../src/db';
+import { applyAliases, buildTxnListQuery, detectRecurring, mandateMatches } from '../src/db';
 
 describe('buildTxnListQuery', () => {
   it('returns just an ordered LIMIT when no filters are set', () => {
     const { sql, binds } = buildTxnListQuery({});
     expect(sql).not.toContain('WHERE');
-    expect(sql).toContain('ORDER BY created_at DESC');
+    expect(sql).toContain('ORDER BY COALESCE(occurred_at, created_at) DESC');
     expect(binds).toEqual([200]); // default limit, last bind
   });
 
@@ -70,5 +70,78 @@ describe('mandateMatches', () => {
 
   it('rejects when the merchant does not match at all', () => {
     expect(mandateMatches(netflix, { merchant: 'AMAZON PRIME', amount: 499, dayOfMonth: 15 })).toBe(false);
+  });
+});
+
+describe('applyAliases', () => {
+  const row = (merchant: string, norm: string) =>
+    ({ merchant, merchant_norm: norm } as any);
+
+  it('renames every row sharing the payee, keeping the bank name as merchant_raw', () => {
+    const out = applyAliases(
+      [row('SATYAWAN JADAV', 'SATYAWAN JADAV'), row('SATYAWAN JADAV', 'SATYAWAN JADAV')],
+      [{ pattern: 'SATYAWAN JADAV', display_name: 'Evening chai stall' }],
+    );
+    expect(out.every((r) => r.merchant === 'Evening chai stall')).toBe(true);
+    expect(out[0].merchant_raw).toBe('SATYAWAN JADAV');
+  });
+
+  it('leaves unaliased rows untouched', () => {
+    const out = applyAliases([row('ZEPTO', 'ZEPTO')], [{ pattern: 'BLINKIT', display_name: 'x' }]);
+    expect(out[0].merchant).toBe('ZEPTO');
+    expect(out[0].merchant_raw).toBeUndefined();
+  });
+});
+
+describe('detectRecurring', () => {
+  const c = (at: string, amount: number) => ({ at, amount, category: 'Entertainment', merchant: 'Spotify' });
+
+  it('spots a monthly subscription on a stable day', () => {
+    const r = detectRecurring([c('2026-06-15T00:00:00Z', 299), c('2026-07-15T00:00:00Z', 299), c('2026-08-15T00:00:00Z', 299)]);
+    expect(r?.frequency).toBe('monthly');
+    expect(r?.amount).toBe(299);
+    expect(r?.dayOfCycle).toBe(15);
+    expect(r?.occurrences).toBe(3);
+  });
+
+  it('tolerates a small price change and a few days of drift', () => {
+    const r = detectRecurring([c('2026-06-15T00:00:00Z', 299), c('2026-07-17T00:00:00Z', 329)]);
+    expect(r?.frequency).toBe('monthly');
+  });
+
+  it('rejects a big price swing', () => {
+    expect(detectRecurring([c('2026-06-15T00:00:00Z', 100), c('2026-07-15T00:00:00Z', 900)])).toBeNull();
+  });
+
+  it('rejects same-month bursts at one shop', () => {
+    expect(detectRecurring([c('2026-08-03T00:00:00Z', 47), c('2026-08-04T00:00:00Z', 47), c('2026-08-06T00:00:00Z', 47)])).toBeNull();
+  });
+
+  it('needs more than one sighting when there is no autopay marker', () => {
+    expect(detectRecurring([c('2026-08-15T00:00:00Z', 299)])).toBeNull();
+  });
+
+  it('trusts a single self-declared autopay charge', () => {
+    // "...towards Groww for UPI Mandate AutoPay" — the SMS proves the mandate.
+    const r = detectRecurring([
+      { at: '2026-08-17T00:00:00Z', amount: 3500, category: 'Other', merchant: 'Groww', autopay: true },
+    ]);
+    expect(r?.frequency).toBe('monthly');
+    expect(r?.dayOfCycle).toBe(17);
+    expect(r?.amount).toBe(3500);
+    expect(r?.confidence).toBeLessThan(0.9);
+  });
+
+  it('is more confident once an autopay has charged twice', () => {
+    const r = detectRecurring([
+      { at: '2026-07-17T00:00:00Z', amount: 3500, category: 'Other', merchant: 'Groww', autopay: true },
+      { at: '2026-08-17T00:00:00Z', amount: 3500, category: 'Other', merchant: 'Groww', autopay: true },
+    ]);
+    expect(r?.confidence).toBe(0.9);
+  });
+
+  it('spots a weekly cycle', () => {
+    const r = detectRecurring([c('2026-08-01T00:00:00Z', 500), c('2026-08-08T00:00:00Z', 500), c('2026-08-15T00:00:00Z', 500)]);
+    expect(r?.frequency).toBe('weekly');
   });
 });

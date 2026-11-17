@@ -108,3 +108,85 @@ export async function presentClassifyNotification(txn: TxnRow): Promise<void> {
     trigger: Platform.OS === 'android' ? { channelId: 'transactions' } : null,
   });
 }
+
+/* ─────────────────────── Personal-assistant reminders ─────────────────────── */
+
+export const ASSISTANT_CHANNEL = 'assistant';
+const LEARNING_ID = 'learning-checkin';
+const STATEMENT_TAG = 'statement-reminder';
+
+async function ensureAssistantChannel() {
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync(ASSISTANT_CHANNEL, {
+      name: 'Assistant',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 200, 100, 200],
+    });
+  }
+}
+
+/**
+ * The nightly learning check-in was removed (replaced by flashcards + the 30-min
+ * cap). Cancel any check-in that older installs scheduled so it stops firing.
+ */
+export async function cancelLearningCheckin(): Promise<void> {
+  try {
+    await Notifications.cancelScheduledNotificationAsync(LEARNING_ID);
+  } catch {}
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  for (const n of scheduled) {
+    if ((n.content.data as { type?: string })?.type === 'learning-checkin') {
+      await Notifications.cancelScheduledNotificationAsync(n.identifier).catch(() => {});
+    }
+  }
+}
+
+/**
+ * Weekly bank-statement reminder: Friday 20:00, then every 8h through the weekend
+ * until a statement is uploaded. expo-notifications can't express "repeat until",
+ * so we lay down a handful of one-off reminders and clear them all the moment a
+ * statement lands (see clearStatementReminders). Re-armed each week by
+ * rearmStatementRemindersIfNeeded on foreground.
+ */
+export async function scheduleStatementReminders(): Promise<void> {
+  await ensureAssistantChannel();
+  await clearStatementReminders();
+  const now = new Date();
+  // Next Friday 20:00 local (today if it's Friday before 20:00).
+  const next = new Date(now);
+  const daysToFri = (5 - now.getDay() + 7) % 7;
+  next.setDate(now.getDate() + daysToFri);
+  next.setHours(20, 0, 0, 0);
+  if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 7);
+
+  // Friday 20:00 + every 8h up to +40h (through Sunday afternoon): 6 nudges.
+  for (let i = 0; i < 6; i++) {
+    const when = new Date(next.getTime() + i * 8 * 3600_000);
+    await Notifications.scheduleNotificationAsync({
+      identifier: `${STATEMENT_TAG}-${i}`,
+      content: {
+        title: i === 0 ? 'Weekly reconciliation 🧾' : 'Still pending: bank statement 🧾',
+        body: 'Share this week’s bank statement PDF to reconcile your spending.',
+        data: { type: 'statement-reminder' },
+      },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: when, channelId: ASSISTANT_CHANNEL },
+    });
+  }
+}
+
+/** Cancel all pending statement nudges — call right after a statement is uploaded. */
+export async function clearStatementReminders(): Promise<void> {
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  await Promise.all(
+    scheduled
+      .filter((n) => (n.content.data as { type?: string })?.type === 'statement-reminder')
+      .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier)),
+  );
+}
+
+/** Re-arm next week's nudges if none are pending (they were consumed or cleared). */
+export async function rearmStatementRemindersIfNeeded(): Promise<void> {
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  const pending = scheduled.filter((n) => (n.content.data as { type?: string })?.type === 'statement-reminder');
+  if (pending.length === 0) await scheduleStatementReminders();
+}
